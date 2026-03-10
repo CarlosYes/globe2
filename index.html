@@ -3,30 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RAU RADAR v22 - PRECISÃO REAL</title>
+    <title>RAU RADAR - LIVE ABLY</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/globe.gl"></script>
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     <style>
         body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
         #globeViz { width: 100vw; height: 100vh; position: absolute; }
         .hud {
             position: absolute; top: 20px; left: 20px; z-index: 100;
-            background: rgba(0, 10, 0, 0.95); border: 2px solid #39ff14;
-            padding: 15px; color: #39ff14; border-radius: 4px;
+            background: rgba(0, 15, 0, 0.9); border: 2px solid #39ff14;
+            padding: 15px; color: #39ff14; border-radius: 5px;
             box-shadow: 0 0 20px rgba(57, 255, 20, 0.5); pointer-events: none;
         }
         .count { font-size: 55px; font-weight: bold; line-height: 1; color: #39ff14; }
         .m-rau { display: flex; flex-direction: column; align-items: center; }
         .l-rau {
-            background: #39ff14; color: #000; padding: 5px 12px; border-radius: 4px;
-            font-size: 12px; font-weight: 900; display: flex; align-items: center; gap: 8px;
+            background: #39ff14; color: #000; padding: 4px 12px; border-radius: 4px;
+            font-size: 11px; font-weight: 900; display: flex; align-items: center; gap: 6px;
             box-shadow: 0 0 15px #39ff14; white-space: nowrap; text-transform: uppercase;
         }
         .l-rau img { width: 22px; border: 1px solid #000; border-radius: 2px; }
         .d-rau { 
             width: 14px; height: 14px; background: #fff; border-radius: 50%; 
-            margin-top: 6px; border: 2px solid #39ff14; box-shadow: 0 0 20px #39ff14;
+            margin-top: 6px; border: 2px solid #39ff14; box-shadow: 0 0 15px #39ff14;
             animation: pulse 2s infinite;
         }
         @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 70% { transform: scale(3); opacity: 0; } 100% { transform: scale(1); opacity: 0; } }
@@ -35,19 +35,17 @@
 <body>
 
 <div class="hud">
-    <div style="font-size: 10px; letter-spacing: 3px; font-weight: bold;">RADAR REAL-TIME</div>
+    <div style="font-size: 10px; letter-spacing: 2px; font-weight: bold;">SISTEMA LIVE ABLY</div>
     <div id="count" class="count">0</div>
-    <div id="status" style="font-size: 10px; color: #fff; margin-top: 5px; font-weight: bold;">A BUSCAR SATÉLITE...</div>
+    <div id="status" style="font-size: 10px; color: #fff; margin-top: 5px;">A CONECTAR...</div>
 </div>
 
 <div id="globeViz"></div>
 
 <script>
-    // Conectando ao servidor Render
-    const socket = io('https://globe2.onrender.com', { 
-        transports: ['websocket'], 
-        upgrade: false 
-    }); 
+    // A TUA CHAVE REAL JÁ ESTÁ AQUI ABAIXO:
+    const ably = new Ably.Realtime('F-h8pw.m-7q0A:8u-vYfP9nFv5L8kK');
+    const channel = ably.channels.get('radar-global');
 
     const world = Globe()(document.getElementById('globeViz'))
         .globeImageUrl('//unpkg.com/three-globe/example/img/earth-night.jpg')
@@ -61,45 +59,49 @@
         });
 
     world.controls().autoRotate = true;
-    world.controls().autoRotateSpeed = 1.2;
+    world.controls().autoRotateSpeed = 1.0;
 
-    async function atualizarLocalizacaoReal() {
+    async function enviarSinal() {
         try {
-            // Usando o serviço mais preciso e sem bloqueios
             const res = await fetch('https://ipapi.co/json/');
             const data = await res.json();
             
-            // FILTRO DE SEGURANÇA: Só envia se as coordenadas forem reais e fora da África (0,0)
-            if (data.latitude && data.latitude !== 0) {
-                const myPos = {
+            if (data.latitude) {
+                const myInfo = {
+                    id: ably.connection.id,
                     lat: data.latitude,
                     lng: data.longitude,
                     city: data.city.toUpperCase(),
                     country: data.country_code
                 };
 
-                socket.emit('update_position', myPos);
-                document.getElementById('status').innerText = "SINAL ATIVO: " + myPos.city;
-                world.pointOfView({ lat: myPos.lat, lng: myPos.lng, altitude: 2.1 }, 2000);
-            } else {
-                throw new Error("Localização imprecisa.");
+                // Publicar presença no Ably
+                channel.presence.enter(myInfo);
+                document.getElementById('status').innerText = "SINAL: " + myInfo.city;
+                world.pointOfView({ lat: myInfo.lat, lng: myInfo.lng, altitude: 2.2 }, 2000);
             }
-
         } catch (e) {
-            document.getElementById('status').innerText = "ERRO: GPS BLOQUEADO NO NAVEGADOR";
-            // Não envia nada. O contador ficará em 0 até que o GPS funcione.
+            document.getElementById('status').innerText = "ERRO AO LOCALIZAR";
         }
     }
 
-    socket.on('connect', () => {
-        atualizarLocalizacaoReal();
-    });
+    function atualizarMapa() {
+        channel.presence.get((err, members) => {
+            if (!err) {
+                const activePoints = members.map(m => m.data).filter(p => p.lat);
+                document.getElementById('count').innerText = activePoints.length;
+                world.htmlElementsData(activePoints);
+            }
+        });
+    }
 
-    socket.on('radar_update', (users) => {
-        // Remove qualquer "lixo" ou sinal 0,0 que tenha sobrado no servidor
-        const validUsers = users.filter(u => u.lat !== 0 && u.lng !== 0);
-        document.getElementById('count').innerText = validUsers.length;
-        world.htmlElementsData(validUsers);
+    channel.presence.subscribe('enter', atualizarMapa);
+    channel.presence.subscribe('leave', atualizarMapa);
+    channel.presence.subscribe('present', atualizarMapa);
+
+    ably.connection.on('connected', () => {
+        document.getElementById('status').innerText = "SISTEMA ONLINE";
+        enviarSinal();
     });
 </script>
 </body>
