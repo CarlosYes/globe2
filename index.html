@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <title>RAU RADAR v15</title>
+    <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/globe.gl"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
+        #globeViz { width: 100vw; height: 100vh; }
+        .hud {
+            position: absolute; top: 20px; left: 20px; z-index: 100;
+            background: rgba(0, 20, 0, 0.9); border: 2px solid #39ff14;
+            padding: 15px; color: #39ff14; pointer-events: none; border-radius: 4px;
+        }
+        .count { font-size: 50px; font-weight: bold; }
+        .m-rau { display: flex; flex-direction: column; align-items: center; }
+        .l-rau {
+            background: #39ff14; color: #000; padding: 5px 10px; border-radius: 4px;
+            font-size: 13px; font-weight: bold; display: flex; align-items: center; gap: 8px;
+            box-shadow: 0 0 15px #39ff14; white-space: nowrap;
+        }
+        .l-rau img { width: 20px; border: 1px solid #000; }
+        .d-rau { width: 12px; height: 12px; background: #fff; border-radius: 50%; margin-top: 5px; box-shadow: 0 0 20px #39ff14; }
+    </style>
+</head>
+<body>
+<div class="hud">
+    <div style="font-size: 10px; letter-spacing: 2px;">RADAR EM DIRETO</div>
+    <div id="count" class="count">0</div>
+    <div id="status" style="font-size: 11px; color: #fff;">SINTONIZANDO...</div>
+</div>
+<div id="globeViz"></div>
+<script>
+    // IMPORTANTE: Troque este link pelo link que o Render lhe der
+    const socket = io('URL_DO_RENDER_AQUI'); 
+
+    const world = Globe()(document.getElementById('globeViz'))
+        .globeImageUrl('//unpkg.com/three-globe/example/img/earth-night.jpg')
+        .backgroundColor('#000000')
+        .htmlElement(d => {
+            const el = document.createElement('div');
+            el.className = 'm-rau';
+            const flag = d.country ? `<img src="https://flagcdn.com/w40/${d.country.toLowerCase()}.png">` : '';
+            el.innerHTML = `<div class="l-rau">${flag}<span>${d.city}</span></div><div class="d-rau"></div>`;
+            return el;
+        });
+
+    async function init() {
+        try {
+            const res = await fetch('https://ipapi.co/json/');
+            const data = await res.json();
+            const myPos = {
+                lat: parseFloat(data.latitude) || 0,
+                lng: parseFloat(data.longitude) || 0,
+                city: (data.city || "Sinal Ativo").toUpperCase(),
+                country: data.country_code || "PT"
+            };
+            socket.emit('update_position', myPos);
+            document.getElementById('status').innerText = "LIGADO: " + myPos.city;
+            world.pointOfView({ lat: myPos.lat, lng: myPos.lng, altitude: 2 }, 2000);
+            socket.on('radar_update', (users) => {
+                document.getElementById('count').innerText = users.length;
+                world.htmlElementsData(users);
+            });
+        } catch (e) {
+            document.getElementById('status').innerText = "ERRO SINAL";
+        }
+    }
+    window.onload = init;
+</script>
+</body>
+</html>
