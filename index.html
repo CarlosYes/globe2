@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RAU RADAR - LIVE ABLY</title>
+    <title>RAU RADAR v27 - FINAL</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/globe.gl"></script>
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
@@ -12,7 +12,7 @@
         #globeViz { width: 100vw; height: 100vh; position: absolute; }
         .hud {
             position: absolute; top: 20px; left: 20px; z-index: 100;
-            background: rgba(0, 15, 0, 0.9); border: 2px solid #39ff14;
+            background: rgba(0, 15, 0, 0.95); border: 2px solid #39ff14;
             padding: 15px; color: #39ff14; border-radius: 5px;
             box-shadow: 0 0 20px rgba(57, 255, 20, 0.5); pointer-events: none;
         }
@@ -37,13 +37,13 @@
 <div class="hud">
     <div style="font-size: 10px; letter-spacing: 2px; font-weight: bold;">SISTEMA LIVE ABLY</div>
     <div id="count" class="count">0</div>
-    <div id="status" style="font-size: 10px; color: #fff; margin-top: 5px;">A CONECTAR...</div>
+    <div id="status" style="font-size: 10px; color: #fff; margin-top: 5px;">A SINTONIZAR...</div>
 </div>
 
 <div id="globeViz"></div>
 
 <script>
-    // A TUA CHAVE REAL JÁ ESTÁ AQUI ABAIXO:
+    // A TUA CHAVE REAL ESTÁ AQUI:
     const ably = new Ably.Realtime('F-h8pw.m-7q0A:8u-vYfP9nFv5L8kK');
     const channel = ably.channels.get('radar-global');
 
@@ -63,46 +63,56 @@
 
     async function enviarSinal() {
         try {
+            // Tentativa de localização via IP
             const res = await fetch('https://ipapi.co/json/');
             const data = await res.json();
             
-            if (data.latitude) {
+            // Verificamos se temos coordenadas (evitar África/0,0)
+            const lat = parseFloat(data.latitude);
+            const lng = parseFloat(data.longitude);
+
+            if (lat && lat !== 0) {
                 const myInfo = {
                     id: ably.connection.id,
-                    lat: data.latitude,
-                    lng: data.longitude,
-                    city: data.city.toUpperCase(),
+                    lat: lat,
+                    lng: lng,
+                    city: (data.city || "SINAL").toUpperCase(),
                     country: data.country_code
                 };
 
-                // Publicar presença no Ably
+                // Publicar presença
                 channel.presence.enter(myInfo);
                 document.getElementById('status').innerText = "SINAL: " + myInfo.city;
-                world.pointOfView({ lat: myInfo.lat, lng: myInfo.lng, altitude: 2.2 }, 2000);
+                world.pointOfView({ lat: lat, lng: lng, altitude: 2.2 }, 2000);
             }
         } catch (e) {
-            document.getElementById('status').innerText = "ERRO AO LOCALIZAR";
+            document.getElementById('status').innerText = "ERRO GPS";
         }
     }
 
-    function atualizarMapa() {
+    // Função de atualização forçada
+    function forceUpdate() {
         channel.presence.get((err, members) => {
             if (!err) {
-                const activePoints = members.map(m => m.data).filter(p => p.lat);
-                document.getElementById('count').innerText = activePoints.length;
-                world.htmlElementsData(activePoints);
+                const points = members.map(m => m.data).filter(p => p && p.lat);
+                document.getElementById('count').innerText = points.length;
+                world.htmlElementsData(points);
             }
         });
     }
 
-    channel.presence.subscribe('enter', atualizarMapa);
-    channel.presence.subscribe('leave', atualizarMapa);
-    channel.presence.subscribe('present', atualizarMapa);
+    // Escutar eventos de entrada e saída
+    channel.presence.subscribe('enter', forceUpdate);
+    channel.presence.subscribe('leave', forceUpdate);
+    channel.presence.subscribe('present', forceUpdate);
 
     ably.connection.on('connected', () => {
-        document.getElementById('status').innerText = "SISTEMA ONLINE";
+        document.getElementById('status').innerText = "ONLINE";
         enviarSinal();
+        // Forçamos uma verificação após 2 segundos
+        setTimeout(forceUpdate, 2000);
     });
+
 </script>
 </body>
 </html>
