@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RAU RADAR v21 - SEGURANÇA MÁXIMA</title>
+    <title>RAU RADAR v22 - PRECISÃO REAL</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/globe.gl"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
@@ -12,38 +12,42 @@
         #globeViz { width: 100vw; height: 100vh; position: absolute; }
         .hud {
             position: absolute; top: 20px; left: 20px; z-index: 100;
-            background: rgba(0, 20, 0, 0.9); border: 2px solid #39ff14;
-            padding: 15px; color: #39ff14; border-radius: 8px;
-            box-shadow: 0 0 20px rgba(57, 255, 20, 0.4); pointer-events: none;
+            background: rgba(0, 10, 0, 0.95); border: 2px solid #39ff14;
+            padding: 15px; color: #39ff14; border-radius: 4px;
+            box-shadow: 0 0 20px rgba(57, 255, 20, 0.5); pointer-events: none;
         }
-        .count { font-size: 50px; font-weight: bold; line-height: 1; }
+        .count { font-size: 55px; font-weight: bold; line-height: 1; color: #39ff14; }
         .m-rau { display: flex; flex-direction: column; align-items: center; }
         .l-rau {
-            background: #39ff14; color: #000; padding: 4px 10px; border-radius: 4px;
-            font-size: 11px; font-weight: bold; display: flex; align-items: center; gap: 6px;
+            background: #39ff14; color: #000; padding: 5px 12px; border-radius: 4px;
+            font-size: 12px; font-weight: 900; display: flex; align-items: center; gap: 8px;
             box-shadow: 0 0 15px #39ff14; white-space: nowrap; text-transform: uppercase;
         }
-        .l-rau img { width: 20px; border: 1px solid #000; }
+        .l-rau img { width: 22px; border: 1px solid #000; border-radius: 2px; }
         .d-rau { 
-            width: 12px; height: 12px; background: #fff; border-radius: 50%; 
-            margin-top: 5px; border: 2px solid #39ff14; box-shadow: 0 0 15px #39ff14;
-            animation: pulse 1.5s infinite;
+            width: 14px; height: 14px; background: #fff; border-radius: 50%; 
+            margin-top: 6px; border: 2px solid #39ff14; box-shadow: 0 0 20px #39ff14;
+            animation: pulse 2s infinite;
         }
-        @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 70% { transform: scale(2.5); opacity: 0; } 100% { transform: scale(1); opacity: 0; } }
+        @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 70% { transform: scale(3); opacity: 0; } 100% { transform: scale(1); opacity: 0; } }
     </style>
 </head>
 <body>
 
 <div class="hud">
-    <div style="font-size: 10px; letter-spacing: 2px; font-weight: bold;">RADAR EM DIRETO</div>
+    <div style="font-size: 10px; letter-spacing: 3px; font-weight: bold;">RADAR REAL-TIME</div>
     <div id="count" class="count">0</div>
-    <div id="status" style="font-size: 10px; color: #fff;">A SINTONIZAR...</div>
+    <div id="status" style="font-size: 10px; color: #fff; margin-top: 5px; font-weight: bold;">A BUSCAR SATÉLITE...</div>
 </div>
 
 <div id="globeViz"></div>
 
 <script>
-    const socket = io('https://globe2.onrender.com', { transports: ['websocket', 'polling'] }); 
+    // Conectando ao servidor Render
+    const socket = io('https://globe2.onrender.com', { 
+        transports: ['websocket'], 
+        upgrade: false 
+    }); 
 
     const world = Globe()(document.getElementById('globeViz'))
         .globeImageUrl('//unpkg.com/three-globe/example/img/earth-night.jpg')
@@ -57,42 +61,45 @@
         });
 
     world.controls().autoRotate = true;
-    world.controls().autoRotateSpeed = 1.0;
+    world.controls().autoRotateSpeed = 1.2;
 
-    async function ligarRadar() {
+    async function atualizarLocalizacaoReal() {
         try {
-            // USAMOS UM SERVIÇO QUE NÃO BLOQUEIA O GPS (DETEÇÃO POR IP)
+            // Usando o serviço mais preciso e sem bloqueios
             const res = await fetch('https://ipapi.co/json/');
             const data = await res.json();
             
-            // Se ele não conseguir a cidade, não enviamos sinal vazio (para não ir para a África)
-            if (!data.latitude || !data.longitude) throw new Error("Localização Inválida");
+            // FILTRO DE SEGURANÇA: Só envia se as coordenadas forem reais e fora da África (0,0)
+            if (data.latitude && data.latitude !== 0) {
+                const myPos = {
+                    lat: data.latitude,
+                    lng: data.longitude,
+                    city: data.city.toUpperCase(),
+                    country: data.country_code
+                };
 
-            const myPos = {
-                lat: data.latitude,
-                lng: data.longitude,
-                city: (data.city || "SINAL ATIVO").toUpperCase(),
-                country: data.country_code
-            };
-
-            socket.emit('update_position', myPos);
-            document.getElementById('status').innerText = "SINAL: " + myPos.city + " (" + myPos.country + ")";
-            world.pointOfView({ lat: myPos.lat, lng: myPos.lng, altitude: 2.2 }, 2000);
+                socket.emit('update_position', myPos);
+                document.getElementById('status').innerText = "SINAL ATIVO: " + myPos.city;
+                world.pointOfView({ lat: myPos.lat, lng: myPos.lng, altitude: 2.1 }, 2000);
+            } else {
+                throw new Error("Localização imprecisa.");
+            }
 
         } catch (e) {
-            document.getElementById('status').innerText = "ERRO: A TENTAR RECONECTAR...";
-            // Tenta novamente em 5 segundos sem enviar sinal falso
-            setTimeout(ligarRadar, 5000);
+            document.getElementById('status').innerText = "ERRO: GPS BLOQUEADO NO NAVEGADOR";
+            // Não envia nada. O contador ficará em 0 até que o GPS funcione.
         }
     }
 
-    socket.on('connect', ligarRadar);
+    socket.on('connect', () => {
+        atualizarLocalizacaoReal();
+    });
 
     socket.on('radar_update', (users) => {
-        // SEGURANÇA: Remove duplicados e sinais inválidos (África/0,0)
-        const activeUsers = users.filter(u => u.lat !== 0 && u.lng !== 0);
-        document.getElementById('count').innerText = activeUsers.length;
-        world.htmlElementsData(activeUsers);
+        // Remove qualquer "lixo" ou sinal 0,0 que tenha sobrado no servidor
+        const validUsers = users.filter(u => u.lat !== 0 && u.lng !== 0);
+        document.getElementById('count').innerText = validUsers.length;
+        world.htmlElementsData(validUsers);
     });
 </script>
 </body>
