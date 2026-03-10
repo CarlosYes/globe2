@@ -3,20 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RAU RADAR v19 - LIVE</title>
-    <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
-    <script src="https://unpkg.com/globe.gl"></script>
+    <title>RAU RADAR v20 - GLOBAL LIVE</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/globe.gl@2.26.2/dist/globe.gl.min.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
-        #globeViz { width: 100vw; height: 100vh; }
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', Courier, monospace; }
+        #globeViz { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; }
+        
         .hud {
             position: absolute; top: 20px; left: 20px; z-index: 100;
-            background: rgba(0, 20, 0, 0.9); border: 2px solid #39ff14;
-            padding: 15px; color: #39ff14; border-radius: 8px;
+            background: rgba(0, 30, 0, 0.85); border: 2px solid #39ff14;
+            padding: 15px; color: #39ff14; border-radius: 5px;
             box-shadow: 0 0 20px rgba(57, 255, 20, 0.4); pointer-events: none;
         }
-        .count { font-size: 50px; font-weight: bold; line-height: 1; }
+        .count { font-size: 50px; font-weight: bold; line-height: 1; text-shadow: 0 0 10px #39ff14; }
+        
+        /* Marcador Visual */
         .m-rau { display: flex; flex-direction: column; align-items: center; }
         .l-rau {
             background: #39ff14; color: #000; padding: 4px 10px; border-radius: 4px;
@@ -24,6 +27,8 @@
             box-shadow: 0 0 15px #39ff14; white-space: nowrap; text-transform: uppercase;
         }
         .l-rau img { width: 20px; height: auto; border: 1px solid #000; }
+        
+        /* Ponto Pulsante */
         .d-rau { 
             width: 12px; height: 12px; background: #fff; border-radius: 50%; 
             margin-top: 5px; border: 2px solid #39ff14; box-shadow: 0 0 15px #39ff14;
@@ -39,21 +44,15 @@
 <body>
 
 <div class="hud">
-    <div style="font-size: 10px; letter-spacing: 2px; font-weight: bold;">RADAR EM DIRETO</div>
+    <div style="font-size: 10px; letter-spacing: 2px;">STATUS: RADAR ATIVO</div>
     <div id="count" class="count">0</div>
-    <div id="status" style="font-size: 10px; color: #fff;">A SINTONIZAR...</div>
+    <div id="status" style="font-size: 10px; color: #fff; margin-top: 5px;">A SINTONIZAR...</div>
 </div>
 
 <div id="globeViz"></div>
 
 <script>
-    // LIGAÇÃO FORÇADA (DESBLOQUEADA)
-    const socket = io('https://globe2.onrender.com', { 
-        transports: ['websocket', 'polling'],
-        forceNew: true,
-        reconnection: true
-    }); 
-
+    // Inicialização do Globo
     const world = Globe()(document.getElementById('globeViz'))
         .globeImageUrl('//unpkg.com/three-globe/example/img/earth-night.jpg')
         .backgroundColor('#000000')
@@ -68,32 +67,41 @@
     world.controls().autoRotate = true;
     world.controls().autoRotateSpeed = 1.0;
 
+    // Ligação ao servidor Render
+    const socket = io('https://globe2.onrender.com', { 
+        transports: ['websocket', 'polling'],
+        forceNew: true
+    }); 
+
     async function ligarRadar() {
         try {
-            // Tentativa de localização real
+            // Detetar localização (Suíça, França, Luxemburgo, etc.)
             const res = await fetch('https://ipapi.co/json/');
             const data = await res.json();
             
             const myPos = {
                 lat: data.latitude || 0,
                 lng: data.longitude || 0,
-                city: (data.city || "SINAL ATIVO").toUpperCase(),
+                city: (data.city || "SINAL").toUpperCase(),
                 country: data.country_code || "UN"
             };
 
             socket.emit('update_position', myPos);
-            document.getElementById('status').innerText = "SINAL: " + myPos.city;
-            if(myPos.lat !== 0) world.pointOfView({ lat: myPos.lat, lng: myPos.lng, altitude: 2.3 }, 2000);
+            document.getElementById('status').innerText = "SINAL: " + myPos.city + " (" + myPos.country + ")";
+            
+            if(myPos.lat !== 0) {
+                world.pointOfView({ lat: myPos.lat, lng: myPos.lng, altitude: 2.3 }, 2000);
+            }
 
         } catch (e) {
-            // Se o GPS falhar, enviamos sinal genérico para o contador não ficar a 0
+            // Plano B se o GPS falhar
             socket.emit('update_position', { lat: 0, lng: 0, city: "RADAR ON", country: "UN" });
             document.getElementById('status').innerText = "SINAL EM MODO SEGURO";
         }
     }
 
     socket.on('connect', () => {
-        console.log("Ligado ao servidor!");
+        console.log("Servidor ligado!");
         ligarRadar();
     });
 
@@ -101,14 +109,6 @@
         document.getElementById('count').innerText = users.length;
         world.htmlElementsData(users);
     });
-
-    // Se o contador estiver a 0 após 5 segundos, tenta reconectar
-    setTimeout(() => {
-        if(document.getElementById('count').innerText === "0") {
-            socket.connect();
-            ligarRadar();
-        }
-    }, 5000);
 
 </script>
 </body>
