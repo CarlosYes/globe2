@@ -2,7 +2,7 @@
 <html lang="pt">
 <head>
     <meta charset="UTF-8">
-    <title>RAU RADAR - LIVE</title>
+    <title>RAU RADAR v15 - LIVE</title>
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
     <script src="https://unpkg.com/globe.gl"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
@@ -10,7 +10,7 @@
         body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
         #globeViz { width: 100vw; height: 100vh; }
         .hud { position: absolute; top: 20px; left: 20px; z-index: 100; background: rgba(0, 20, 0, 0.9); border: 2px solid #39ff14; padding: 15px; color: #39ff14; border-radius: 8px; box-shadow: 0 0 20px rgba(57, 255, 20, 0.3); }
-        .count { font-size: 50px; font-weight: bold; }
+        .count { font-size: 50px; font-weight: bold; line-height: 1; }
         .m-rau { display: flex; flex-direction: column; align-items: center; }
         .l-rau { background: #39ff14; color: #000; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; display: flex; align-items: center; gap: 6px; box-shadow: 0 0 15px #39ff14; white-space: nowrap; }
         .l-rau img { width: 18px; border: 1px solid #000; }
@@ -20,13 +20,17 @@
 </head>
 <body>
 <div class="hud">
-    <div style="font-size: 10px; letter-spacing: 2px;">RADAR EM DIRETO</div>
+    <div style="font-size: 10px; letter-spacing: 2px;">SINAL EM DIRETO</div>
     <div id="count" class="count">0</div>
-    <div id="status" style="font-size: 10px; color: #fff;">A SINTONIZAR...</div>
+    <div id="status" style="font-size: 10px; color: #fff;">SINTONIZANDO...</div>
 </div>
 <div id="globeViz"></div>
 <script>
-    const socket = io('https://globe2.onrender.com'); 
+    // FORÇAR LIGAÇÃO POR WEBSOCKET
+    const socket = io('https://globe2.onrender.com', { 
+        transports: ['websocket', 'polling'],
+        reconnection: true 
+    }); 
 
     const world = Globe()(document.getElementById('globeViz'))
         .globeImageUrl('//unpkg.com/three-globe/example/img/earth-night.jpg')
@@ -39,21 +43,19 @@
             return el;
         });
 
-    // ROTAÇÃO LENTA PARA A DIREITA
     world.controls().autoRotate = true;
-    world.controls().autoRotateSpeed = 1.2;
+    world.controls().autoRotateSpeed = 1.0;
 
     async function init() {
         try {
-            // Usando ipapi.co que é mais preciso para cidades portuguesas
             const res = await fetch('https://ipapi.co/json/');
             const data = await res.json();
             
             const myPos = {
-                lat: data.latitude,
-                lng: data.longitude,
-                city: data.city.toUpperCase(),
-                country: data.country_code
+                lat: data.latitude || 38.7,
+                lng: data.longitude || -9.1,
+                city: (data.city || "SINAL ATIVO").toUpperCase(),
+                country: data.country_code || "PT"
             };
 
             socket.emit('update_position', myPos);
@@ -61,19 +63,20 @@
             world.pointOfView({ lat: myPos.lat, lng: myPos.lng, altitude: 2.0 }, 2000);
 
         } catch (e) {
-            document.getElementById('status').innerText = "SINAL EM MODO SEGURO";
-            socket.emit('update_position', { lat: 38.7, lng: -9.1, city: "RADIO ON", country: "PT" });
+            document.getElementById('status').innerText = "SINAL GPS LIMITADO";
+            socket.emit('update_position', { lat: 38.7, lng: -9.1, city: "RAU RADAR", country: "PT" });
         }
     }
 
     socket.on('radar_update', (users) => {
-        // Filtra para garantir que não aparecem duplicados
-        const uniqueUsers = Array.from(new Map(users.map(u => [u.id, u])).values());
-        document.getElementById('count').innerText = uniqueUsers.length;
-        world.htmlElementsData(uniqueUsers);
+        document.getElementById('count').innerText = users.length;
+        world.htmlElementsData(users);
     });
 
+    // Tentar localizar assim que ligar
     socket.on('connect', init);
+    // Se já estiver ligado, tenta agora
+    if (socket.connected) init();
 </script>
 </body>
 </html>
