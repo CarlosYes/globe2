@@ -3,75 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RAU RADAR - FINAL SECURITY</title>
+    <title>RAU RADAR - GLOBAL SECURE</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/globe.gl"></script>
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     
     <style>
-        :root {
-            --neon-green: #39ff14;
-            --bg-dark: #000000;
-        }
-
-        body { 
-            margin: 0; 
-            background: var(--bg-dark); 
-            overflow: hidden; 
-            font-family: 'Courier New', Courier, monospace;
-            user-select: none; /* Proteção básica contra cópia */
-        }
-
+        :root { --neon: #39ff14; --bg: #000; }
+        body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Courier New', monospace; user-select: none; }
         #globeViz { width: 100vw; height: 100vh; position: absolute; }
-
         .hud {
             position: absolute; top: 20px; left: 20px; z-index: 100;
-            background: rgba(0, 0, 0, 0.85); border: 2px solid var(--neon-green);
-            padding: 20px; color: var(--neon-green); border-radius: 8px;
-            box-shadow: 0 0 20px rgba(57, 255, 20, 0.2);
+            background: rgba(0, 0, 0, 0.9); border: 2px solid var(--neon);
+            padding: 15px; color: var(--neon); border-radius: 8px;
+            box-shadow: 0 0 20px rgba(57, 255, 20, 0.3);
             pointer-events: none;
         }
-
-        .count { font-size: 64px; font-weight: bold; line-height: 1; text-shadow: 0 0 10px var(--neon-green); }
-        .system-label { font-size: 12px; letter-spacing: 2px; margin-top: 5px; }
-
-        /* Estilo dos Marcadores no Globo */
+        .count { font-size: 55px; font-weight: bold; line-height: 1; }
         .m-rau { display: flex; flex-direction: column; align-items: center; }
-        .l-rau { 
-            background: var(--neon-green); color: #000; 
-            padding: 2px 8px; border-radius: 3px; 
-            font-size: 10px; font-weight: bold; white-space: nowrap;
-            box-shadow: 0 0 10px var(--neon-green);
-        }
-        .d-rau { 
-            width: 10px; height: 10px; background: #fff; 
-            border-radius: 50%; margin-top: 4px; 
-            border: 2px solid var(--neon-green); 
-            animation: pulse 2s infinite; 
-        }
-
-        @keyframes pulse { 
-            0% { transform: scale(1); opacity: 1; } 
-            70% { transform: scale(3); opacity: 0; } 
-            100% { transform: scale(1); opacity: 0; } 
-        }
+        .l-rau { background: var(--neon); color: #000; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
+        .d-rau { width: 10px; height: 10px; background: #fff; border-radius: 50%; margin-top: 4px; border: 2px solid var(--neon); animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 70% { transform: scale(3); opacity: 0; } 100% { transform: scale(1); opacity: 0; } }
     </style>
 </head>
 <body oncontextmenu="return false;">
 
 <div class="hud">
     <div id="count" class="count">0</div>
-    <div class="system-label">RADAR_ATIVO</div>
-    <div id="status" style="font-size: 11px; margin-top: 10px; opacity: 0.8;">SCANNING...</div>
+    <div style="font-size: 10px; letter-spacing: 2px; font-weight: bold;">SISTEMA DE RASTREIO</div>
+    <div id="status" style="font-size: 10px; margin-top: 8px; color: #fff;">INICIALIZANDO...</div>
 </div>
 
 <div id="globeViz"></div>
 
 <script>
-    /**
-     * CONFIGURAÇÃO E SEGURANÇA
-     */
+    // Configurações Ably (Suas Chaves)
     const API_KEY = '0XXKIg.kPL-iw:5hRGSGvPZCgUwMNts43-74X7nB9_25r3YlD0s-WE7vs';
+    const STORAGE_KEY = 'rau_radar_pref';
     const ably = new Ably.Realtime({ key: API_KEY });
     const channel = ably.channels.get('radar-global');
 
@@ -87,34 +55,61 @@
         });
 
     world.controls().autoRotate = true;
-    world.controls().autoRotateSpeed = 0.5;
+    world.controls().autoRotateSpeed = 0.6;
 
-    // --- FUNÇÕES DE NÚCLEO ---
+    // --- LÓGICA DE GEOLOCALIZAÇÃO COM MÚLTIPLOS FALLBACKS ---
+    async function fetchGeo() {
+        const providers = [
+            { url: 'https://ipapi.co/json/', lat: 'latitude', lon: 'longitude', city: 'city' },
+            { url: 'https://ipwho.is/', lat: 'latitude', lon: 'longitude', city: 'city' },
+            { url: 'https://api.ipify.org?format=json', isIpOnly: true } // Terceiro nível: apenas IP
+        ];
 
-    async function ligarRadar() {
-        try {
-            const res = await fetch('https://ipapi.co/json/');
-            const data = await res.json();
-            
-            if (data.latitude) {
-                const myPos = { 
-                    lat: data.latitude, 
-                    lng: data.longitude, 
-                    city: data.city.toUpperCase() 
-                };
-
-                // Presença no Ably
-                await channel.presence.enter(myPos);
+        for (let p of providers) {
+            try {
+                const res = await fetch(p.url);
+                const data = await res.json();
                 
-                document.getElementById('status').innerText = "LOCALIZADO: " + myPos.city;
-                world.pointOfView({ lat: myPos.lat, lng: myPos.lng, altitude: 2.0 }, 3000);
-            }
-        } catch (e) { 
-            document.getElementById('status').innerText = "ERRO NA GEOLOCALIZAÇÃO"; 
+                if (data[p.lat] || data.ip) {
+                    // Se pegou só o IP, usa outro serviço para converter
+                    if (p.isIpOnly) {
+                        const geoRes = await fetch(`https://ipapi.co/${data.ip}/json/`);
+                        return await geoRes.json();
+                    }
+                    return data;
+                }
+            } catch (e) { console.warn("Provedor falhou, tentando próximo..."); }
+        }
+        return null;
+    }
+
+    async function ligar() {
+        const statusEl = document.getElementById('status');
+        statusEl.innerText = "BUSCANDO COORDENADAS...";
+
+        const data = await fetchGeo();
+        
+        if (data) {
+            const myPos = {
+                lat: data.latitude || data.lat || 0,
+                lng: data.longitude || data.lon || 0,
+                city: (data.city || "SINAL ANONIMO").toUpperCase()
+            };
+
+            // PERSISTÊNCIA: Salva a última localização para evitar erro de GPS no futuro
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(myPos));
+
+            await channel.presence.enter(myPos);
+            statusEl.innerText = "ONLINE: " + myPos.city;
+            statusEl.style.color = "var(--neon)";
+            world.pointOfView({ lat: myPos.lat, lng: myPos.lng, altitude: 2.2 }, 2500);
+        } else {
+            statusEl.innerText = "ERRO DE CONEXÃO GPS";
+            statusEl.style.color = "red";
         }
     }
 
-    function atualizarPresenca() {
+    function atualizar() {
         channel.presence.get((err, members) => {
             if (!err) {
                 const pontos = members.map(m => m.data).filter(p => p && p.lat);
@@ -124,22 +119,15 @@
         });
     }
 
-    // --- SEGURANÇA E PERSISTÊNCIA ---
-
-    // Bloqueio de teclas de inspeção (Anti-Theft)
-    document.onkeydown = function(e) {
-        if (e.keyCode == 123 || (e.ctrlKey && e.shiftKey && (e.keyCode == 73 || e.keyCode == 74)) || (e.ctrlKey && e.keyCode == 85)) {
-            return false;
-        }
+    // --- PROTEÇÃO ANTI-THEFT ---
+    document.onkeydown = (e) => {
+        if (e.keyCode == 123 || (e.ctrlKey && e.shiftKey && (e.keyCode == 73 || e.keyCode == 74)) || (e.ctrlKey && e.keyCode == 85)) return false;
     };
 
-    // Escutar eventos de presença
-    channel.presence.subscribe(atualizarPresenca);
-
-    // Conexão Inicial
+    channel.presence.subscribe(atualizar);
     ably.connection.on('connected', () => {
-        ligarRadar();
-        setTimeout(atualizarPresenca, 1000);
+        ligar();
+        setTimeout(atualizar, 1500);
     });
 
 </script>
