@@ -3,38 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RAU RADAR FINAL</title>
+    <title>RAU RADAR - FINAL</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/globe.gl"></script>
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; color: #39ff14; }
+        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
         #globeViz { width: 100vw; height: 100vh; position: absolute; }
         .hud {
             position: absolute; top: 20px; left: 20px; z-index: 100;
-            background: rgba(0, 20, 0, 0.9); border: 1px solid #39ff14;
-            padding: 15px; border-radius: 5px; pointer-events: none;
+            background: rgba(0, 0, 0, 0.9); border: 2px solid #39ff14;
+            padding: 15px; color: #39ff14; border-radius: 5px;
+            box-shadow: 0 0 15px rgba(57, 255, 20, 0.3);
         }
-        .count { font-size: 50px; font-weight: bold; line-height: 1; }
+        .count { font-size: 55px; font-weight: bold; line-height: 1; }
         .m-rau { display: flex; flex-direction: column; align-items: center; }
-        .l-rau { background: #39ff14; color: #000; padding: 4px 8px; border-radius: 3px; font-size: 10px; font-weight: bold; white-space: nowrap; text-transform: uppercase; }
-        .d-rau { width: 10px; height: 10px; background: #fff; border-radius: 50%; margin-top: 4px; border: 2px solid #39ff14; animation: pulse 2s infinite; }
+        .l-rau { background: #39ff14; color: #000; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; white-space: nowrap; }
+        .d-rau { width: 12px; height: 12px; background: #fff; border-radius: 50%; margin-top: 5px; border: 2px solid #39ff14; animation: pulse 2s infinite; }
         @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 70% { transform: scale(3); opacity: 0; } 100% { transform: scale(1); opacity: 0; } }
     </style>
 </head>
 <body>
 
 <div class="hud">
-    <div style="font-size: 10px;">STATUS DO RADAR</div>
     <div id="count" class="count">0</div>
-    <div id="status" style="font-size: 10px; color: #fff;">A SINTONIZAR...</div>
+    <div id="status" style="font-size: 10px; color: #39ff14; font-weight: bold;">SISTEMA ATIVO</div>
 </div>
 
 <div id="globeViz"></div>
 
 <script>
-    // Configuração direta e simplificada
-    const API_KEY = 'F-h8pw.m-7q0A:8u-vYfP9nFv5L8kK';
+    // TUA API KEY REAL INSERIDA:
+    const API_KEY = '0XXKIg.kPL-iw:5hRGSGvPZCgUwMNts43-74X7nB9_25r3YlD0s-WE7vs';
     const ably = new Ably.Realtime({ key: API_KEY });
     const channel = ably.channels.get('radar-global');
 
@@ -44,49 +44,42 @@
         .htmlElement(d => {
             const el = document.createElement('div');
             el.className = 'm-rau';
-            el.innerHTML = `<div class="l-rau"><span>${d.city}</span></div><div class="d-rau"></div>`;
+            el.innerHTML = `<div class="l-rau">${d.city}</div><div class="d-rau"></div>`;
             return el;
         });
 
-    async function ligarSinal() {
+    world.controls().autoRotate = true;
+
+    async function ligar() {
         try {
             const res = await fetch('https://ipapi.co/json/');
             const data = await res.json();
-            
             if (data.latitude) {
-                const info = {
-                    lat: data.latitude,
-                    lng: data.longitude,
-                    city: (data.city || "ON").toUpperCase()
-                };
-                
-                // Entra na rede
-                await channel.presence.enter(info);
-                document.getElementById('status').innerText = "ONLINE: " + info.city;
-                world.pointOfView({ lat: info.lat, lng: info.lng, altitude: 2.5 }, 2000);
+                const myPos = { lat: data.latitude, lng: data.longitude, city: data.city.toUpperCase() };
+                // Entrar no canal de presença
+                await channel.presence.enter(myPos);
+                document.getElementById('status').innerText = "ONLINE: " + myPos.city;
+                world.pointOfView({ lat: myPos.lat, lng: myPos.lng, altitude: 2.2 }, 2000);
             }
-        } catch (e) {
-            document.getElementById('status').innerText = "ERRO NA REDE";
-        }
+        } catch (e) { document.getElementById('status').innerText = "ERRO GPS"; }
     }
 
     function atualizar() {
         channel.presence.get((err, members) => {
             if (!err) {
-                const pts = members.map(m => m.data);
-                document.getElementById('count').innerText = pts.length;
-                world.htmlElementsData(pts);
+                const pontos = members.map(m => m.data).filter(p => p && p.lat);
+                document.getElementById('count').innerText = pontos.length;
+                world.htmlElementsData(pontos);
             }
         });
     }
 
-    // Eventos simplificados
-    channel.presence.subscribe(() => atualizar());
+    // Escutar quem entra/sai
+    channel.presence.subscribe(atualizar);
     
-    ably.connection.on('connected', () => {
-        document.getElementById('status').innerText = "CONECTADO";
-        ligarSinal();
-        setTimeout(atualizar, 1000);
+    ably.connection.on('connected', () => { 
+        ligar(); 
+        setTimeout(atualizar, 1500); 
     });
 </script>
 </body>
