@@ -2,30 +2,60 @@
 <html lang="pt">
 <head>
     <meta charset="UTF-8">
-    <title>RAU RADAR v15</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAU RADAR v15 - LIVE</title>
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
     <script src="https://unpkg.com/globe.gl"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         #globeViz { width: 100vw; height: 100vh; }
-        .hud { position: absolute; top: 20px; left: 20px; z-index: 100; background: rgba(0, 20, 0, 0.9); border: 2px solid #39ff14; padding: 15px; color: #39ff14; pointer-events: none; border-radius: 4px; box-shadow: 0 0 15px rgba(57,255,20,0.3); }
-        .count { font-size: 50px; font-weight: bold; line-height: 1; }
+        
+        /* Painel HUD */
+        .hud {
+            position: absolute; top: 20px; left: 20px; z-index: 100;
+            background: rgba(0, 20, 0, 0.85); border: 2px solid #39ff14;
+            padding: 15px; color: #39ff14; pointer-events: none; border-radius: 8px;
+            box-shadow: 0 0 20px rgba(57, 255, 20, 0.2);
+        }
+        .count { font-size: 45px; font-weight: 900; line-height: 1; margin: 5px 0; }
+        
+        /* Marcador no Globo (Bandeira + Cidade + Ponto) */
         .m-rau { display: flex; flex-direction: column; align-items: center; }
-        .l-rau { background: #39ff14; color: #000; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 6px; box-shadow: 0 0 10px #39ff14; white-space: nowrap; }
-        .l-rau img { width: 18px; border: 1px solid #000; border-radius: 2px; }
-        .d-rau { width: 10px; height: 10px; background: #fff; border-radius: 50%; margin-top: 4px; box-shadow: 0 0 15px #39ff14; border: 1.5px solid #39ff14; }
+        .l-rau {
+            background: #39ff14; color: #000; padding: 4px 10px; border-radius: 4px;
+            font-size: 11px; font-weight: 800; display: flex; align-items: center; gap: 6px;
+            box-shadow: 0 0 15px #39ff14; white-space: nowrap; text-transform: uppercase;
+        }
+        .l-rau img { width: 18px; height: auto; border: 1px solid #000; border-radius: 2px; }
+        
+        /* Ponto Verde Pulsante */
+        .d-rau { 
+            width: 12px; height: 12px; background: #fff; border-radius: 50%; 
+            margin-top: 5px; border: 2px solid #39ff14;
+            box-shadow: 0 0 15px #39ff14;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(57, 255, 20, 0.7); }
+            70% { transform: scale(1.3); box-shadow: 0 0 0 10px rgba(57, 255, 20, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(57, 255, 20, 0); }
+        }
     </style>
 </head>
 <body>
+
 <div class="hud">
-    <div style="font-size: 9px; letter-spacing: 2px; font-weight: bold;">RADAR EM DIRETO</div>
+    <div style="font-size: 10px; letter-spacing: 2px; font-weight: bold; opacity: 0.8;">SINAL EM DIRETO</div>
     <div id="count" class="count">0</div>
-    <div id="status" style="font-size: 10px; color: #fff; margin-top: 5px;">A CONECTAR...</div>
+    <div id="status" style="font-size: 10px; color: #fff;">A SINTONIZAR...</div>
 </div>
+
 <div id="globeViz"></div>
+
 <script>
-    // LIGAÇÃO AO SEU SERVIDOR QUE JÁ ESTÁ LIVE
+    // Conexão com o seu servidor no Render
     const socket = io('https://globe2.onrender.com'); 
 
     const world = Globe()(document.getElementById('globeViz'))
@@ -34,35 +64,58 @@
         .htmlElement(d => {
             const el = document.createElement('div');
             el.className = 'm-rau';
-            const flag = d.country ? `<img src="https://flagcdn.com/w40/${d.country.toLowerCase()}.png">` : '';
-            el.innerHTML = `<div class="l-rau">${flag}<span>${d.city}</span></div><div class="d-rau"></div>`;
+            const flagCode = d.country ? d.country.toLowerCase() : 'un';
+            const flagImg = `<img src="https://flagcdn.com/w40/${flagCode}.png">`;
+            
+            el.innerHTML = `
+                <div class="l-rau">
+                    ${flagImg}
+                    <span>${d.city}</span>
+                </div>
+                <div class="d-rau"></div>
+            `;
             return el;
         });
 
-    // --- FAZ O GLOBO GIRAR SOZINHO ---
+    // --- ROTAÇÃO AUTOMÁTICA ---
     world.controls().autoRotate = true;
-    world.controls().autoRotateSpeed = 1.5; 
+    world.controls().autoRotateSpeed = 0.7; // Gira suavemente para a direita
 
     async function init() {
         try {
+            // Provedor de IP alternativo para evitar bloqueios de GPS
             const res = await fetch('https://ipapi.co/json/');
             const data = await res.json();
+            
             const myPos = {
                 lat: parseFloat(data.latitude) || 0,
                 lng: parseFloat(data.longitude) || 0,
-                city: (data.city || "Ouvinte").toUpperCase(),
+                city: (data.city || "Sinal Ativo").toUpperCase(),
                 country: data.country_code || "PT"
             };
+
+            // Envia para o servidor Render
             socket.emit('update_position', myPos);
-            document.getElementById('status').innerText = "SINAL: " + myPos.city;
+            document.getElementById('status').innerText = "CONECTADO: " + myPos.city;
+
+            // Foca a visão inicial
             world.pointOfView({ lat: myPos.lat, lng: myPos.lng, altitude: 2.2 }, 2000);
-            
+
+            // Atualiza o radar para todos
             socket.on('radar_update', (users) => {
                 document.getElementById('count').innerText = users.length;
                 world.htmlElementsData(users);
             });
-        } catch (e) { document.getElementById('status').innerText = "ERRO DE GPS"; }
+
+        } catch (e) {
+            document.getElementById('status').innerText = "SINAL GPS LIMITADO";
+            console.error(e);
+        }
     }
+
+    // Tentar reconectar se o servidor Render adormecer
+    socket.on('connect', () => { init(); });
+
     window.onload = init;
 </script>
 </body>
