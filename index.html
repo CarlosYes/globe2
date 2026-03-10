@@ -3,26 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RAU RADAR - GLOBAL SECURE</title>
+    <title>RAU RADAR - ULTRA PERFORMANCE</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/globe.gl"></script>
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
-    
     <style>
-        :root { --neon: #39ff14; --bg: #000; }
-        body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Courier New', monospace; user-select: none; }
+        :root { --neon: #39ff14; }
+        body { margin: 0; background: #000; overflow: hidden; font-family: monospace; user-select: none; }
         #globeViz { width: 100vw; height: 100vh; position: absolute; }
         .hud {
             position: absolute; top: 20px; left: 20px; z-index: 100;
             background: rgba(0, 0, 0, 0.9); border: 2px solid var(--neon);
-            padding: 15px; color: var(--neon); border-radius: 8px;
-            box-shadow: 0 0 20px rgba(57, 255, 20, 0.3);
-            pointer-events: none;
+            padding: 15px; color: var(--neon); border-radius: 4px;
+            box-shadow: 0 0 20px rgba(57, 255, 20, 0.2);
         }
-        .count { font-size: 55px; font-weight: bold; line-height: 1; }
+        .count { font-size: 50px; font-weight: bold; }
         .m-rau { display: flex; flex-direction: column; align-items: center; }
-        .l-rau { background: var(--neon); color: #000; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
-        .d-rau { width: 10px; height: 10px; background: #fff; border-radius: 50%; margin-top: 4px; border: 2px solid var(--neon); animation: pulse 2s infinite; }
+        .l-rau { background: var(--neon); color: #000; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; }
+        .d-rau { width: 8px; height: 8px; background: #fff; border-radius: 50%; margin-top: 4px; border: 2px solid var(--neon); animation: pulse 2s infinite; }
         @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 70% { transform: scale(3); opacity: 0; } 100% { transform: scale(1); opacity: 0; } }
     </style>
 </head>
@@ -30,20 +28,16 @@
 
 <div class="hud">
     <div id="count" class="count">0</div>
-    <div style="font-size: 10px; letter-spacing: 2px; font-weight: bold;">SISTEMA DE RASTREIO</div>
-    <div id="status" style="font-size: 10px; margin-top: 8px; color: #fff;">INICIALIZANDO...</div>
+    <div id="status" style="font-size: 10px; font-weight: bold;">SISTEMA OPERACIONAL</div>
 </div>
 
 <div id="globeViz"></div>
 
 <script>
-    // Configurações Ably (Suas Chaves)
     const API_KEY = '0XXKIg.kPL-iw:5hRGSGvPZCgUwMNts43-74X7nB9_25r3YlD0s-WE7vs';
-    const STORAGE_KEY = 'rau_radar_pref';
     const ably = new Ably.Realtime({ key: API_KEY });
     const channel = ably.channels.get('radar-global');
 
-    // Inicialização do Globo
     const world = Globe()(document.getElementById('globeViz'))
         .globeImageUrl('//unpkg.com/three-globe/example/img/earth-night.jpg')
         .backgroundColor('#000000')
@@ -55,57 +49,42 @@
         });
 
     world.controls().autoRotate = true;
-    world.controls().autoRotateSpeed = 0.6;
 
-    // --- LÓGICA DE GEOLOCALIZAÇÃO COM MÚLTIPLOS FALLBACKS ---
-    async function fetchGeo() {
-        const providers = [
-            { url: 'https://ipapi.co/json/', lat: 'latitude', lon: 'longitude', city: 'city' },
-            { url: 'https://ipwho.is/', lat: 'latitude', lon: 'longitude', city: 'city' },
-            { url: 'https://api.ipify.org?format=json', isIpOnly: true } // Terceiro nível: apenas IP
-        ];
-
-        for (let p of providers) {
-            try {
-                const res = await fetch(p.url);
-                const data = await res.json();
-                
-                if (data[p.lat] || data.ip) {
-                    // Se pegou só o IP, usa outro serviço para converter
-                    if (p.isIpOnly) {
-                        const geoRes = await fetch(`https://ipapi.co/${data.ip}/json/`);
-                        return await geoRes.json();
-                    }
-                    return data;
-                }
-            } catch (e) { console.warn("Provedor falhou, tentando próximo..."); }
+    // SERVIÇO EFICAZ: Cloudflare Trace + Fallback via Geolocation nativa
+    async function obterPosicao() {
+        try {
+            // Método 1: Cloudflare (Rápido e sem bloqueios de CORS comuns)
+            const response = await fetch('https://www.cloudflare.com/cdn-cgi/trace');
+            const text = await response.text();
+            const ip = text.match(/ip=(.*)/)[1];
+            
+            // Localização via IP usando um serviço de alta disponibilidade
+            const locRes = await fetch(`https://ipapi.co/${ip}/json/`);
+            const data = await locRes.json();
+            
+            if(data.latitude) return { lat: data.latitude, lng: data.longitude, city: data.city.toUpperCase() };
+            throw new Error();
+        } catch (e) {
+            // Método 2: Backup via GPS nativo do navegador
+            return new Promise((resolve) => {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, city: "GPS LOCAL" }),
+                    () => resolve(null)
+                );
+            });
         }
-        return null;
     }
 
     async function ligar() {
-        const statusEl = document.getElementById('status');
-        statusEl.innerText = "BUSCANDO COORDENADAS...";
-
-        const data = await fetchGeo();
-        
-        if (data) {
-            const myPos = {
-                lat: data.latitude || data.lat || 0,
-                lng: data.longitude || data.lon || 0,
-                city: (data.city || "SINAL ANONIMO").toUpperCase()
-            };
-
-            // PERSISTÊNCIA: Salva a última localização para evitar erro de GPS no futuro
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(myPos));
-
+        const myPos = await obterPosicao();
+        if (myPos) {
             await channel.presence.enter(myPos);
-            statusEl.innerText = "ONLINE: " + myPos.city;
-            statusEl.style.color = "var(--neon)";
-            world.pointOfView({ lat: myPos.lat, lng: myPos.lng, altitude: 2.2 }, 2500);
+            document.getElementById('status').innerText = "ONLINE: " + myPos.city;
+            world.pointOfView({ lat: myPos.lat, lng: myPos.lng, altitude: 2.2 }, 2000);
         } else {
-            statusEl.innerText = "ERRO DE CONEXÃO GPS";
-            statusEl.style.color = "red";
+            document.getElementById('status').innerText = "SINAL ANONIMO";
+            // Posição padrão caso tudo falhe para não quebrar o radar
+            await channel.presence.enter({ lat: 0, lng: 0, city: "ANONIMO" });
         }
     }
 
@@ -119,7 +98,7 @@
         });
     }
 
-    // --- PROTEÇÃO ANTI-THEFT ---
+    // Anti-Theft
     document.onkeydown = (e) => {
         if (e.keyCode == 123 || (e.ctrlKey && e.shiftKey && (e.keyCode == 73 || e.keyCode == 74)) || (e.ctrlKey && e.keyCode == 85)) return false;
     };
@@ -127,9 +106,8 @@
     channel.presence.subscribe(atualizar);
     ably.connection.on('connected', () => {
         ligar();
-        setTimeout(atualizar, 1500);
+        setTimeout(atualizar, 1000);
     });
-
 </script>
 </body>
 </html>
