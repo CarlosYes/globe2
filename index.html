@@ -34,7 +34,7 @@
 <div id="globeViz"></div>
 <script>
     // IMPORTANTE: Troque este link pelo link que o Render lhe der
-    const socket = io('URL_DO_RENDER_AQUI'); 
+    const socket = io('https://globe2.onrender.com'); 
 
     const world = Globe()(document.getElementById('globeViz'))
         .globeImageUrl('//unpkg.com/three-globe/example/img/earth-night.jpg')
@@ -71,4 +71,5 @@
     window.onload = init;
 </script>
 </body>
+
 </html>
