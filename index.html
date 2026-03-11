@@ -18,8 +18,8 @@
             box-shadow: 0 0 20px rgba(57, 255, 20, 0.2);
         }
         .count { font-size: 50px; font-weight: bold; line-height: 1; }
-        .m-rau { display: flex; flex-direction: column; align-items: center; }
-        .l-rau { background: var(--neon); color: #000; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; }
+        .m-rau { display: flex; flex-direction: column; align-items: center; pointer-events: none; }
+        .l-rau { background: var(--neon); color: #000; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; white-space: nowrap; }
         .d-rau { width: 8px; height: 8px; background: #fff; border-radius: 50%; margin-top: 4px; border: 2px solid var(--neon); animation: pulse 2s infinite; }
         @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 70% { transform: scale(3); opacity: 0; } 100% { transform: scale(1); opacity: 0; } }
     </style>
@@ -50,54 +50,68 @@
         });
 
     world.controls().autoRotate = true;
+    world.controls().autoRotateSpeed = 0.5;
 
-    // MOTOR DE LOCALIZAÇÃO DE ALTA DISPONIBILIDADE
+    // MOTOR DE LOCALIZAÇÃO
     async function getReliableLocation() {
-        // TENTATIVA 1: Cloudflare + IP-API (Alta taxa de sucesso)
         try {
-            const trace = await fetch('https://www.cloudflare.com/cdn-cgi/trace').then(r => r.text());
-            const ip = trace.match(/ip=(.*)/)[1];
-            const data = await fetch(`http://ip-api.com/json/${ip}`).then(r => r.json());
-            if (data.status === 'success') return { lat: data.lat, lng: data.lon, city: data.city.toUpperCase() };
-        } catch(e) {}
-
-        // TENTATIVA 2: IPAPI.CO (Backup)
-        try {
+            // Usando apenas ipapi.co para simplificar e evitar bloqueios de CORS mistos
             const data = await fetch('https://ipapi.co/json/').then(r => r.json());
-            if (data.latitude) return { lat: data.latitude, lng: data.longitude, city: data.city.toUpperCase() };
-        } catch(e) {}
+            if (data.latitude) return { 
+                lat: data.latitude, 
+                lng: data.longitude, 
+                city: data.city ? data.city.toUpperCase() : "DESCONHECIDO",
+                id: Math.random().toString(36).substr(2, 9) // ID único para evitar conflitos
+            };
+        } catch(e) { console.error("Erro na localização:", e); }
 
-        // TENTATIVA 3: LocalStorage (Se já entrou uma vez, usamos a última posição conhecida)
         const saved = localStorage.getItem('last_geo');
         if (saved) return JSON.parse(saved);
 
-        return { lat: 0, lng: 0, city: "COORDENADA ZERO" };
+        return { lat: -23.55, lng: -46.63, city: "SÃO PAULO" }; // Default
     }
 
     async function bootstrap() {
         const pos = await getReliableLocation();
-        localStorage.setItem('last_geo', JSON.stringify(pos)); // Guarda para amanhã
+        localStorage.setItem('last_geo', JSON.stringify(pos));
         
+        // Entra na presença com os dados de localização
         await channel.presence.enter(pos);
-        document.getElementById('status').innerText = "ONLINE: " + pos.city;
-        world.pointOfView({ lat: pos.lat, lng: pos.lng, altitude: 2.2 }, 2000);
+        document.getElementById('status').innerText = "RADAR ATIVO: " + pos.city;
+        
+        // Foca no ponto do usuário
+        world.pointOfView({ lat: pos.lat, lng: pos.lng, altitude: 2.0 }, 2000);
         
         atualizar();
     }
 
     function atualizar() {
         channel.presence.get((err, members) => {
-            if (!err) {
-                const pontos = members.map(m => m.data).filter(p => p && p.lat !== undefined);
-                document.getElementById('count').innerText = pontos.length;
-                world.htmlElementsData(pontos);
+            if (err) {
+                console.error("Erro ao obter membros:", err);
+                return;
             }
+            // Mapeia os dados garantindo que lat/lng existam
+            const pontos = members
+                .map(m => m.data)
+                .filter(p => p && typeof p.lat === 'number');
+
+            document.getElementById('count').innerText = pontos.length;
+            
+            // ATUALIZAÇÃO CRÍTICA: Força o globe.gl a redesenhar os elementos
+            world.htmlElementsData(pontos);
         });
     }
 
-    // EVENTOS
-    channel.presence.subscribe(atualizar);
-    ably.connection.on('connected', bootstrap);
+    // EVENTOS DE PRESENÇA
+    channel.presence.subscribe('enter', atualizar);
+    channel.presence.subscribe('leave', atualizar);
+    channel.presence.subscribe('update', atualizar);
+
+    // Inicialização quando o Ably conectar
+    ably.connection.on('connected', () => {
+        bootstrap();
+    });
 
     // SEGURANÇA MÁXIMA
     document.onkeydown = (e) => {
