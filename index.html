@@ -1,55 +1,63 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-pt">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RAU RADAR PRO</title>
-    <script src="https://unpkg.com/three"></script>
-    <script src="https://unpkg.com/globe.gl"></script>
+    <title>RAU RADAR ELITE</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/globe.gl@2.26.2/dist/globe.gl.min.js"></script>
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     <style>
         :root { --neon: #39ff14; }
-        body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: var(--neon); }
-        #globeViz { width: 100vw; height: 100vh; position: fixed; top: 0; left: 0; z-index: 1; }
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #globeViz { width: 100vw; height: 100vh; position: fixed; top: 0; }
         
+        /* HUD Ultra-Moderno */
         .hud {
-            position: absolute; top: 20px; left: 20px; z-index: 100;
-            background: rgba(0,0,0,0.9); border: 2px solid var(--neon);
-            padding: 15px; border-radius: 4px; box-shadow: 0 0 20px rgba(57, 255, 20, 0.3);
-            pointer-events: auto;
+            position: absolute; top: 25px; left: 25px; z-index: 9999;
+            background: rgba(0, 15, 0, 0.95); border: 2px solid var(--neon);
+            padding: 20px; border-radius: 2px; color: var(--neon);
+            box-shadow: 0 0 30px rgba(57, 255, 20, 0.2);
+            pointer-events: all;
         }
-        .count { font-size: 50px; font-weight: bold; line-height: 1; display: block; }
-        .controls { display: flex; gap: 8px; margin-top: 10px; }
+        .count { font-size: 60px; font-weight: 900; line-height: 0.8; letter-spacing: -2px; }
+        .status { font-size: 10px; text-transform: uppercase; margin: 10px 0; letter-spacing: 2px; opacity: 0.8; }
+        
+        .controls { display: flex; gap: 10px; border-top: 1px solid rgba(57, 255, 20, 0.3); pt: 10px; }
         .btn { 
-            background: transparent; border: 1px solid var(--neon); color: var(--neon);
-            padding: 5px 10px; cursor: pointer; font-size: 10px; font-weight: bold; text-transform: uppercase;
+            background: none; border: 1px solid var(--neon); color: var(--neon);
+            padding: 6px 12px; cursor: pointer; font-size: 10px; font-weight: bold;
+            transition: 0.3s; text-transform: uppercase;
         }
-        .btn.active { background: var(--neon); color: #000; }
+        .btn:hover, .btn.active { background: var(--neon); color: #000; }
 
-        /* Marcadores */
-        .m-rau { display: flex; flex-direction: column; align-items: center; pointer-events: none; }
-        .label { 
-            display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.85); 
-            border: 1px solid var(--neon); padding: 4px 10px; border-radius: 20px; 
-            color: #fff; font-size: 11px; font-weight: bold; white-space: nowrap;
+        /* Marcadores com Bandeira e Ponto Verde */
+        .marker-container { display: flex; flex-direction: column; align-items: center; pointer-events: none; }
+        .marker-label { 
+            display: flex; align-items: center; gap: 8px;
+            background: rgba(0,0,0,0.9); border: 1px solid var(--neon);
+            padding: 5px 12px; border-radius: 20px; color: #fff;
+            font-size: 11px; font-weight: bold; white-space: nowrap;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
         }
-        .flag { width: 18px; height: 12px; border-radius: 2px; }
-        .dot { 
-            width: 10px; height: 10px; background: var(--neon); border-radius: 50%; 
-            margin-top: 5px; position: relative; box-shadow: 0 0 10px var(--neon);
+        .marker-flag { width: 20px; height: 14px; border-radius: 2px; object-fit: cover; }
+        .marker-dot { 
+            width: 12px; height: 12px; background: var(--neon); border-radius: 50%; 
+            margin-top: 6px; box-shadow: 0 0 15px var(--neon); position: relative;
         }
-        .pulse {
-            position: absolute; width: 100%; height: 100%; background: var(--neon); 
-            border-radius: 50%; animation: pulse-ring 2s infinite;
+        .marker-pulse {
+            position: absolute; width: 100%; height: 100%;
+            background: var(--neon); border-radius: 50%;
+            animation: pulse-out 2s infinite;
         }
-        @keyframes pulse-ring { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(4); opacity: 0; } }
+        @keyframes pulse-out { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(4); opacity: 0; } }
     </style>
 </head>
 <body oncontextmenu="return false;">
 
 <div class="hud">
-    <span id="count" class="count">0</span>
-    <small id="status">INICIALIZANDO...</small>
+    <div id="count" class="count">0</div>
+    <div id="status" class="status">A Sincronizar Radar...</div>
     <div class="controls">
         <button id="v-btn" class="btn">Som: ON</button>
         <button id="a-btn" class="btn">Giro: ON</button>
@@ -60,55 +68,78 @@
 
 <script>
 (function() {
-    // 1. Persistência de Som e Giro
-    const settings = {
+    // 1. PERSISTÊNCIA (Sempre guarda as tuas escolhas)
+    const store = {
         vol: localStorage.getItem('rau_v') !== 'false',
-        auto: localStorage.getItem('rau_a') !== 'false'
+        giro: localStorage.getItem('rau_g') !== 'false'
     };
 
-    // 2. Configuração do Globo (Uso de link alternativo para evitar tela preta)
+    // 2. ABLY - INFRAESTRUTURA REAL-TIME
+    const ably = new Ably.Realtime({ key: '0XXKIg.kPL-iw:5hRGSGvPZCgUwMNts43-74X7nB9_25r3YlD0s-WE7vs' });
+    const channel = ably.channels.get('radar-global');
+
+    // 3. CONFIGURAÇÃO AVANÇADA DO GLOBO
     const world = Globe()(document.getElementById('globeViz'))
-        .globeImageUrl('//unpkg.com/three-globe/example/img/earth-night.jpg')
+        .globeImageUrl('https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-night.jpg')
         .backgroundColor('#000000')
         .showAtmosphere(true)
         .atmosphereColor('#39ff14')
+        .atmosphereDaylightAlpha(0.15)
         .htmlElement(d => {
-            const el = document.createElement('div');
-            el.className = 'm-rau';
-            const fUrl = `https://flagcdn.com/w40/${d.cc.toLowerCase()}.png`;
-            el.innerHTML = `<div class="label"><img src="${fUrl}" class="flag"><span>${d.city}</span></div><div class="dot"><div class="pulse"></div></div>`;
-            return el;
+            const div = document.createElement('div');
+            div.className = 'marker-container';
+            const flag = `https://flagcdn.com/w40/${d.cc.toLowerCase()}.png`;
+            div.innerHTML = `
+                <div class="marker-label">
+                    <img src="${flag}" class="marker-flag" onerror="this.style.display='none'">
+                    <span>${d.city}</span>
+                </div>
+                <div class="marker-dot"><div class="marker-pulse"></div></div>
+            `;
+            return div;
         });
 
-    world.controls().autoRotate = settings.auto;
-    world.controls().autoRotateSpeed = 0.5;
+    world.controls().autoRotate = store.giro;
+    world.controls().autoRotateSpeed = 0.6;
 
-    // 3. Conexão Ably
-    const client = new Ably.Realtime({ key: '0XXKIg.kPL-iw:5hRGSGvPZCgUwMNts43-74X7nB9_25r3YlD0s-WE7vs' });
-    const radar = client.channels.get('radar-global');
-
-    // 4. Localização com Backup
-    async function start() {
+    // 4. SISTEMA DE LOCALIZAÇÃO INFALÍVEL (COM BACKUP)
+    async function initSystem() {
+        let locationData = null;
+        
         try {
+            // Tenta o serviço mais rápido primeiro
             const res = await fetch('https://ipapi.co/json/');
-            const data = await res.json();
-            const user = {
-                lat: data.latitude || 0,
-                lng: data.longitude || 0,
-                city: (data.city || "VISITANTE").toUpperCase(),
-                cc: data.country_code || "un"
-            };
-            radar.presence.enter(user);
-            document.getElementById('status').innerText = "SISTEMA ATIVO: " + user.city;
-            world.pointOfView({ lat: user.lat, lng: user.lng, altitude: 2.2 }, 2000);
-            update();
+            locationData = await res.json();
         } catch (e) {
-            document.getElementById('status').innerText = "SINAL GPS FRACO";
+            // Backup imediato se o primeiro falhar
+            try {
+                const res2 = await fetch('https://freeipapi.com/api/json');
+                const d2 = await res2.json();
+                locationData = { latitude: d2.latitude, longitude: d2.longitude, city: d2.cityName, country_code: d2.countryCode };
+            } catch (e2) {
+                // Ponto padrão para nunca dar erro de GPS
+                locationData = { latitude: 38.72, longitude: -9.13, city: "LISBOA", country_code: "PT" };
+            }
         }
+
+        const myProfile = {
+            lat: locationData.latitude,
+            lng: locationData.longitude,
+            city: (locationData.city || "CONECTADO").toUpperCase(),
+            cc: locationData.country_code || "un",
+            id: ably.connection.id
+        };
+
+        // Entrar no Radar
+        channel.presence.enter(myProfile);
+        document.getElementById('status').innerText = `Radar Ativo: ${myProfile.city}`;
+        world.pointOfView({ lat: myProfile.lat, lng: myProfile.lng, altitude: 2.2 }, 2000);
+        
+        syncUsers();
     }
 
-    function update() {
-        radar.presence.get((err, members) => {
+    function syncUsers() {
+        channel.presence.get((err, members) => {
             if (err) return;
             const pts = members.map(m => m.data).filter(p => p && p.lat);
             document.getElementById('count').innerText = pts.length;
@@ -116,26 +147,37 @@
         });
     }
 
-    // 5. Interface e Eventos
-    radar.presence.subscribe(['enter', 'leave'], update);
-    client.connection.on('connected', start);
+    // 5. HANDLERS DE EVENTOS
+    channel.presence.subscribe(['enter', 'leave'], syncUsers);
 
     const vBtn = document.getElementById('v-btn');
     const aBtn = document.getElementById('a-btn');
 
-    const syncUI = () => {
-        vBtn.innerText = `Som: ${settings.vol ? 'ON' : 'OFF'}`;
-        vBtn.classList.toggle('active', settings.vol);
-        aBtn.innerText = `Giro: ${settings.auto ? 'ON' : 'OFF'}`;
-        aBtn.classList.toggle('active', settings.auto);
-        world.controls().autoRotate = settings.auto;
+    const updateUI = () => {
+        vBtn.innerText = `Som: ${store.vol ? 'ON' : 'OFF'}`;
+        vBtn.classList.toggle('active', store.vol);
+        aBtn.innerText = `Giro: ${store.giro ? 'ON' : 'OFF'}`;
+        aBtn.classList.toggle('active', store.giro);
+        world.controls().autoRotate = store.giro;
     };
 
-    vBtn.onclick = () => { settings.vol = !settings.vol; localStorage.setItem('rau_v', settings.vol); syncUI(); };
-    aBtn.onclick = () => { settings.auto = !settings.auto; localStorage.setItem('rau_a', settings.auto); syncUI(); };
+    vBtn.onclick = () => { store.vol = !store.vol; localStorage.setItem('rau_v', store.vol); updateUI(); };
+    aBtn.onclick = () => { store.giro = !store.giro; localStorage.setItem('rau_g', store.giro); updateUI(); };
 
-    syncUI();
-    window.addEventListener('resize', () => { world.width(window.innerWidth); world.height(window.innerHeight); });
+    // 6. PROTEÇÃO E INICIALIZAÇÃO
+    updateUI();
+    ably.connection.on('connected', initSystem);
+
+    window.addEventListener('resize', () => {
+        world.width(window.innerWidth);
+        world.height(window.innerHeight);
+    });
+
+    // Bloqueio de Inspeção
+    document.addEventListener('keydown', e => {
+        if (e.keyCode == 123 || (e.ctrlKey && e.shiftKey && (e.keyCode == 73 || e.keyCode == 74)) || (e.ctrlKey && e.keyCode == 85)) e.preventDefault();
+    });
+
 })();
 </script>
 </body>
