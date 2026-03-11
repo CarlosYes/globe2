@@ -58,7 +58,7 @@
 
 <div class="hud">
     <span id="count" class="count">0</span>
-    <span id="status" class="status-text">Iniciando Radar...</span>
+    <span id="status" class="status-text">Sistema Ativo</span>
     <div class="controls">
         <button id="v-btn" class="btn">Som: ON</button>
         <button id="a-btn" class="btn">Giro: ON</button>
@@ -69,18 +69,15 @@
 
 <script>
 (function() {
-    // 1. MEMÓRIA E ESTADO
     const state = {
         vol: localStorage.getItem('rau_v') !== 'false',
         auto: localStorage.getItem('rau_a') !== 'false'
     };
 
-    // 2. CONFIGURAÇÃO ABLY
     const A_KEY = '0XXKIg.kPL-iw:5hRGSGvPZCgUwMNts43-74X7nB9_25r3YlD0s-WE7vs';
     const client = new Ably.Realtime({ key: A_KEY });
     const radar = client.channels.get('radar-global');
 
-    // 3. INICIALIZAÇÃO DO GLOBO
     const world = Globe()(document.getElementById('globeViz'))
         .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-night.jpg')
         .backgroundColor('#000000')
@@ -104,31 +101,22 @@
     world.controls().autoRotate = state.auto;
     world.controls().autoRotateSpeed = 0.5;
 
-    // 4. MOTOR DE LOCALIZAÇÃO COM REDUNDÂNCIA
     async function getLocation() {
-        // Tentativa 1: IPAPI (Mais completo)
         try {
             const r = await fetch('https://ipapi.co/json/');
             const d = await r.json();
             if(d.latitude) return { lat: d.latitude, lng: d.longitude, city: d.city, cc: d.country_code };
         } catch(e) {}
-
-        // Tentativa 2: FREEIPAPI (Backup rápido)
         try {
             const r = await fetch('https://freeipapi.com/api/json');
             const d = await r.json();
             if(d.latitude) return { lat: d.latitude, lng: d.longitude, city: d.cityName, cc: d.countryCode };
         } catch(e) {}
-
-        // Fallback final
         return { lat: 0, lng: 0, city: "VISITANTE", cc: "un" };
     }
 
-    // 5. BOOTSTRAP DO SISTEMA
     async function start() {
-        document.getElementById('status').innerText = "Sincronizando...";
         const pos = await getLocation();
-        
         const userData = {
             lat: pos.lat,
             lng: pos.lng,
@@ -138,9 +126,8 @@
         };
 
         radar.presence.enter(userData);
-        document.getElementById('status').innerText = `Online: ${userData.city}`;
+        document.getElementById('status').innerText = `RADAR: ${userData.city}`;
         world.pointOfView({ lat: userData.lat, lng: userData.lng, altitude: 2.2 }, 2000);
-        
         refresh();
     }
 
@@ -153,7 +140,6 @@
         });
     }
 
-    // 6. EVENTOS E UI
     radar.presence.subscribe(['enter', 'leave'], refresh);
 
     const vBtn = document.getElementById('v-btn');
@@ -173,15 +159,10 @@
     syncUI();
     client.connection.on('connected', start);
 
-    // 7. SEGURANÇA E RESIZE
     window.addEventListener('resize', () => {
         world.width(window.innerWidth);
         world.height(window.innerHeight);
     });
-
-    document.onkeydown = (e) => {
-        if (e.keyCode == 123 || (e.ctrlKey && e.shiftKey && (e.keyCode == 73 || e.keyCode == 74)) || (e.ctrlKey && e.keyCode == 85)) return false;
-    };
 })();
 </script>
 </body>
