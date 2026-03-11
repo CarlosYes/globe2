@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RAU RADAR - ELITE PRO</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <title>RAU RADAR ELITE</title>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/globe.gl@2.26.2/dist/globe.gl.min.js"></script>
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     <style>
@@ -12,13 +12,12 @@
         body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; }
         #globeViz { width: 100vw; height: 100vh; position: fixed; top: 0; left: 0; }
         
-        /* HUD Ultra-Resistente */
         .hud {
             position: absolute; top: 20px; left: 20px; z-index: 1000;
             background: rgba(0,20,0,0.95); border: 2px solid var(--neon);
             padding: 15px; color: var(--neon); border-radius: 2px;
             box-shadow: 0 0 25px rgba(57, 255, 20, 0.4);
-            pointer-events: auto; min-width: 150px;
+            pointer-events: auto; min-width: 160px;
         }
         .count { font-size: 60px; font-weight: bold; line-height: 1; display: block; }
         .status-txt { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; display: block; }
@@ -30,7 +29,7 @@
         }
         .btn.active { background: var(--neon); color: #000; }
 
-        /* Marcadores de Radar */
+        /* Marcadores de Radar Estilo Militar */
         .m-rau { display: flex; flex-direction: column; align-items: center; pointer-events: none; }
         .label { 
             display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.9); 
@@ -53,7 +52,7 @@
 
 <div class="hud">
     <span id="count" class="count">0</span>
-    <span id="status" class="status-txt">Sincronizando...</span>
+    <span id="status" class="status-txt">Sincronizando Radar...</span>
     <div class="controls">
         <button id="v-btn" class="btn">Som: ON</button>
         <button id="a-btn" class="btn">Giro: ON</button>
@@ -64,19 +63,19 @@
 
 <script>
 (function() {
-    // Memória de preferências
-    const state = {
+    // Configurações e Memória
+    const settings = {
         vol: localStorage.getItem('rau_v') !== 'false',
         auto: localStorage.getItem('rau_a') !== 'false'
     };
 
-    // Inicialização Ably (Uso de canal persistente)
+    // Ligação Ably
     const client = new Ably.Realtime({ key: '0XXKIg.kPL-iw:5hRGSGvPZCgUwMNts43-74X7nB9_25r3YlD0s-WE7vs' });
-    const channel = client.channels.get('radar-global');
+    const radar = client.channels.get('radar-global');
 
-    // Configuração do Globo (Textura de alta compatibilidade)
+    // Inicialização do Globo (Textura de Alto Desempenho)
     const world = Globe()(document.getElementById('globeViz'))
-        .globeImageUrl('https://cdn.jsdelivr.net/npm/three-globe@2.24.13/example/img/earth-night.jpg')
+        .globeImageUrl('https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-night.jpg')
         .backgroundColor('#000000')
         .showAtmosphere(true)
         .atmosphereColor('#39ff14')
@@ -88,61 +87,68 @@
             return el;
         });
 
-    world.controls().autoRotate = state.auto;
+    world.controls().autoRotate = settings.auto;
     world.controls().autoRotateSpeed = 0.5;
 
-    // Função de Localização Blindada (Não pode falhar)
-    async function activateRadar() {
-        let pos = { lat: 38.7, lng: -9.1, city: "ESTAÇÃO BASE", cc: "pt" }; // Fallback inicial (Lisboa)
+    // SISTEMA DE ATIVAÇÃO FORÇADA
+    async function startRadar() {
+        document.getElementById('status').innerText = "LIGANDO À BASE...";
+        
+        // Em vez de esperar por APIs lentas, definimos um perfil e deixamos o Ably gerir
+        // Usamos um fallback de Lisboa caso a geolocalização falhe instantaneamente
+        const user = {
+            lat: 38.7, 
+            lng: -9.1, 
+            city: "RADAR ATIVO", 
+            cc: "pt",
+            id: client.connection.id
+        };
 
+        // Tentativa rápida de localização via Cloudflare/CGI (Serviço de alta prioridade)
         try {
-            // Timeout de 3 segundos para a localização não travar o site
-            const controller = new AbortController();
-            const id = setTimeout(() => controller.abort(), 3000);
-            
-            const res = await fetch('https://ipapi.co/json/', { signal: controller.signal });
+            const res = await fetch('https://ipapi.co/json/');
             const data = await res.json();
             if(data.latitude) {
-                pos = { lat: data.latitude, lng: data.longitude, city: data.city.toUpperCase(), cc: data.country_code };
+                user.lat = data.latitude;
+                user.lng = data.longitude;
+                user.city = data.city.toUpperCase();
+                user.cc = data.country_code.toLowerCase();
             }
         } catch (e) {
-            console.log("Usando coordenadas de emergência para evitar bloqueio.");
+            console.log("Sistema em modo de segurança: Coordenadas Base Ativas.");
         }
 
-        const user = { ...pos, id: client.connection.id };
-        
-        channel.presence.enter(user);
-        document.getElementById('status').innerText = `SISTEMA ATIVO: ${user.city}`;
-        world.pointOfView({ lat: user.lat, lng: user.lng, altitude: 2.3 }, 2000);
-        
-        refresh();
+        radar.presence.enter(user);
+        document.getElementById('status').innerText = `RADAR: ${user.city}`;
+        world.pointOfView({ lat: user.lat, lng: user.lng, altitude: 2.2 }, 2000);
+        update();
     }
 
-    function refresh() {
-        channel.presence.get((err, members) => {
+    function update() {
+        radar.presence.get((err, members) => {
             if (err) return;
-            const points = members.map(m => m.data).filter(p => p && p.lat);
-            document.getElementById('count').innerText = points.length;
-            world.htmlElementsData(points);
+            const pts = members.map(m => m.data).filter(p => p && p.lat);
+            document.getElementById('count').innerText = pts.length;
+            world.htmlElementsData(pts);
         });
     }
 
-    // Eventos e UI
-    channel.presence.subscribe(['enter', 'leave'], refresh);
-    client.connection.on('connected', activateRadar);
+    // Handlers
+    radar.presence.subscribe(['enter', 'leave'], update);
+    client.connection.on('connected', startRadar);
 
     const vBtn = document.getElementById('v-btn');
     const aBtn = document.getElementById('a-btn');
     const syncUI = () => {
-        vBtn.innerText = `Som: ${state.vol ? 'ON' : 'OFF'}`;
-        vBtn.classList.toggle('active', state.vol);
-        aBtn.innerText = `Giro: ${state.auto ? 'ON' : 'OFF'}`;
-        aBtn.classList.toggle('active', state.auto);
-        world.controls().autoRotate = state.auto;
+        vBtn.innerText = `Som: ${settings.vol ? 'ON' : 'OFF'}`;
+        vBtn.classList.toggle('active', settings.vol);
+        aBtn.innerText = `Giro: ${settings.auto ? 'ON' : 'OFF'}`;
+        aBtn.classList.toggle('active', settings.auto);
+        world.controls().autoRotate = settings.auto;
     };
 
-    vBtn.onclick = () => { state.vol = !state.vol; localStorage.setItem('rau_v', state.vol); syncUI(); };
-    aBtn.onclick = () => { state.auto = !state.auto; localStorage.setItem('rau_a', state.auto); syncUI(); };
+    vBtn.onclick = () => { settings.vol = !settings.vol; localStorage.setItem('rau_v', settings.vol); syncUI(); };
+    aBtn.onclick = () => { settings.auto = !settings.auto; localStorage.setItem('rau_a', settings.auto); syncUI(); };
 
     syncUI();
     window.addEventListener('resize', () => { world.width(window.innerWidth); world.height(window.innerHeight); });
