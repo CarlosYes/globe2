@@ -1,158 +1,183 @@
 <!DOCTYPE html>
-<html lang="pt-pt">
+<html lang="pt-br">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RAU RADAR ELITE</title>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/globe.gl@2.26.2/dist/globe.gl.min.js"></script>
-    <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
+    <title>Visitor Globe Player</title>
     <style>
-        :root { --neon: #39ff14; }
-        body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; }
-        #globeViz { width: 100vw; height: 100vh; position: fixed; top: 0; left: 0; }
-        
-        .hud {
-            position: absolute; top: 20px; left: 20px; z-index: 1000;
-            background: rgba(0,20,0,0.95); border: 2px solid var(--neon);
-            padding: 15px; color: var(--neon); border-radius: 2px;
-            box-shadow: 0 0 25px rgba(57, 255, 20, 0.4);
-            pointer-events: auto; min-width: 160px;
+        /* Container Principal */
+        .mmvst_outer {
+            box-sizing: border-box;
+            border-radius: 6px;
+            position: relative;
+            margin: 0 auto;
+            height: 400px;
+            width: 400px;
+            background: transparent;
         }
-        .count { font-size: 60px; font-weight: bold; line-height: 1; display: block; }
-        .status-txt { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; display: block; }
-        
-        .controls { display: flex; gap: 8px; border-top: 1px solid rgba(57, 255, 20, 0.3); padding-top: 10px; }
-        .btn { 
-            background: transparent; border: 1px solid var(--neon); color: var(--neon);
-            padding: 5px 10px; cursor: pointer; font-size: 9px; font-weight: bold; text-transform: uppercase;
-        }
-        .btn.active { background: var(--neon); color: #000; }
 
-        /* Marcadores de Radar Estilo Militar */
-        .m-rau { display: flex; flex-direction: column; align-items: center; pointer-events: none; }
-        .label { 
-            display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.9); 
-            border: 1px solid var(--neon); padding: 4px 10px; border-radius: 20px; 
-            color: #fff; font-size: 11px; font-weight: bold; white-space: nowrap;
+        .mmvst_inner, .mmvst_globe {
+            width: 100%;
+            height: 100%;
+            position: relative;
         }
-        .flag { width: 18px; height: 12px; border-radius: 2px; object-fit: cover; }
-        .dot { 
-            width: 10px; height: 10px; background: var(--neon); border-radius: 50%; 
-            margin-top: 5px; position: relative; box-shadow: 0 0 15px var(--neon);
+
+        /* Camadas do Globo */
+        .mmvst_map, .mmvst_map_f, .mmvst_map_b, .mmvst_inner_shadow, .mmvst_ref_top {
+            position: absolute;
+            display: block;
+            margin: 0;
+            top: 0;
+            left: 0;
         }
-        .pulse {
-            position: absolute; width: 100%; height: 100%; background: var(--neon); 
-            border-radius: 50%; animation: pulse-ring 2s infinite;
+
+        /* Máscara Circular do Globo */
+        .mmvst_map {
+            z-index: 2;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            border-radius: 50%;
+            box-shadow: inset 0 0 50px rgba(0,0,0,0.5);
         }
-        @keyframes pulse-ring { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(4); opacity: 0; } }
+
+        /* Texturas do Mapa (Frente e Fundo para efeito 3D) */
+        .mmvst_map_f, .mmvst_map_b {
+            width: 1800px;
+            height: 450px;
+            background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxODAwIDkwMCI+PHBhdGggZD0iTTAsMEgxODAwVjkwMEgwWiIgZmlsbD0iIzA4MTkyNyIvPjxwYXRoIGQ9Ik00MjkuMyAxNDQuMDVsMS45LjI0IDIuMS0uNjQgMi42MyAyLS4yIDEuNjUtLjcuNC0uMTggMS4yLTEuNjYtMS4xMi0xLjQuMTUtMi43My0yLjctMS4xNy0uMTgtLjE2LS41MiAxLjU0LS41eiIgZmlsbD0iIzQ0YmY4NyIvPjwvc3ZnPg==');
+            background-size: cover;
+        }
+
+        /* Animação de Rotação */
+        @keyframes rotateGlobe {
+            from { transform: translateX(0); }
+            to { transform: translateX(-900px); }
+        }
+
+        .mmvst_map_f { animation: rotateGlobe 20s linear infinite; opacity: 0.8; }
+        .mmvst_map_b { animation: rotateGlobe 30s linear infinite; opacity: 0.4; }
+
+        /* Sombras e Reflexos */
+        .mmvst_inner_shadow {
+            z-index: 3;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(0,0,0,0.4) 100%);
+            pointer-events: none;
+        }
+
+        .mmvst_ref_top {
+            z-index: 4;
+            width: 100%;
+            height: 50%;
+            background: linear-gradient(to bottom, rgba(255,255,255,0.2), transparent);
+            border-radius: 200px 200px 0 0;
+        }
+
+        /* Controles (Volume e Status) */
+        .player-controls {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            z-index: 10;
+            display: flex;
+            gap: 10px;
+            background: rgba(0,0,0,0.5);
+            padding: 5px 10px;
+            border-radius: 20px;
+            backdrop-filter: blur(5px);
+        }
+
+        .control-btn {
+            cursor: pointer;
+            color: white;
+            font-size: 14px;
+            user-select: none;
+            transition: transform 0.2s;
+        }
+
+        .control-btn:hover { transform: scale(1.1); }
     </style>
 </head>
-<body oncontextmenu="return false;">
+<body>
 
-<div class="hud">
-    <span id="count" class="count">0</span>
-    <span id="status" class="status-txt">Sincronizando Radar...</span>
-    <div class="controls">
-        <button id="v-btn" class="btn">Som: ON</button>
-        <button id="a-btn" class="btn">Giro: ON</button>
+<div class="mmvst_outer" id="main-player-container">
+    <div class="mmvst_inner">
+        <div class="mmvst_globe">
+            <div class="mmvst_map">
+                <div class="mmvst_map_b"></div>
+                <div class="mmvst_map_f"></div>
+            </div>
+            <div class="mmvst_inner_shadow"></div>
+            <div class="mmvst_ref_top"></div>
+        </div>
+    </div>
+
+    <div class="player-controls">
+        <div id="volume-toggle" class="control-btn" title="Alternar Volume">🔊</div>
+        <div id="autoplay-toggle" class="control-btn" title="Autoplay On/Off">▶️</div>
     </div>
 </div>
 
-<div id="globeViz"></div>
-
 <script>
-(function() {
-    // Configurações e Memória
-    const settings = {
-        vol: localStorage.getItem('rau_v') !== 'false',
-        auto: localStorage.getItem('rau_a') !== 'false'
-    };
+    (function() {
+        'use strict';
 
-    // Ligação Ably
-    const client = new Ably.Realtime({ key: '0XXKIg.kPL-iw:5hRGSGvPZCgUwMNts43-74X7nB9_25r3YlD0s-WE7vs' });
-    const radar = client.channels.get('radar-global');
-
-    // Inicialização do Globo (Textura de Alto Desempenho)
-    const world = Globe()(document.getElementById('globeViz'))
-        .globeImageUrl('https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-night.jpg')
-        .backgroundColor('#000000')
-        .showAtmosphere(true)
-        .atmosphereColor('#39ff14')
-        .htmlElement(d => {
-            const el = document.createElement('div');
-            el.className = 'm-rau';
-            const flag = `https://flagcdn.com/w40/${d.cc.toLowerCase()}.png`;
-            el.innerHTML = `<div class="label"><img src="${flag}" class="flag" onerror="this.style.display='none'"><span>${d.city}</span></div><div class="dot"><div class="pulse"></div></div>`;
-            return el;
-        });
-
-    world.controls().autoRotate = settings.auto;
-    world.controls().autoRotateSpeed = 0.5;
-
-    // SISTEMA DE ATIVAÇÃO FORÇADA
-    async function startRadar() {
-        document.getElementById('status').innerText = "LIGANDO À BASE...";
-        
-        // Em vez de esperar por APIs lentas, definimos um perfil e deixamos o Ably gerir
-        // Usamos um fallback de Lisboa caso a geolocalização falhe instantaneamente
-        const user = {
-            lat: 38.7, 
-            lng: -9.1, 
-            city: "RADAR ATIVO", 
-            cc: "pt",
-            id: client.connection.id
+        // Configurações de Segurança e Persistência
+        const STORAGE_KEYS = {
+            VOLUME: 'mmvst_vol_state',
+            AUTOPLAY: 'mmvst_autoplay_state'
         };
 
-        // Tentativa rápida de localização via Cloudflare/CGI (Serviço de alta prioridade)
-        try {
-            const res = await fetch('https://ipapi.co/json/');
-            const data = await res.json();
-            if(data.latitude) {
-                user.lat = data.latitude;
-                user.lng = data.longitude;
-                user.city = data.city.toUpperCase();
-                user.cc = data.country_code.toLowerCase();
+        const volumeBtn = document.getElementById('volume-toggle');
+        const autoplayBtn = document.getElementById('autoplay-toggle');
+        const mapLayer = document.querySelector('.mmvst_map_f');
+
+        // Função para carregar estados salvos
+        function initSettings() {
+            const savedVol = localStorage.getItem(STORAGE_KEYS.VOLUME);
+            const savedAuto = localStorage.getItem(STORAGE_KEYS.AUTOPLAY);
+
+            if (savedVol === 'muted') {
+                volumeBtn.innerText = 'muted' ? '🔇' : '🔊';
             }
-        } catch (e) {
-            console.log("Sistema em modo de segurança: Coordenadas Base Ativas.");
+
+            if (savedAuto === 'off') {
+                mapLayer.style.animationPlayState = 'paused';
+                autoplayBtn.innerText = '⏸️';
+            }
         }
 
-        radar.presence.enter(user);
-        document.getElementById('status').innerText = `RADAR: ${user.city}`;
-        world.pointOfView({ lat: user.lat, lng: user.lng, altitude: 2.2 }, 2000);
-        update();
-    }
-
-    function update() {
-        radar.presence.get((err, members) => {
-            if (err) return;
-            const pts = members.map(m => m.data).filter(p => p && p.lat);
-            document.getElementById('count').innerText = pts.length;
-            world.htmlElementsData(pts);
+        // Toggle Volume
+        volumeBtn.addEventListener('click', () => {
+            const isMuted = volumeBtn.innerText === '🔇';
+            volumeBtn.innerText = isMuted ? '🔊' : '🔇';
+            localStorage.setItem(STORAGE_KEYS.VOLUME, isMuted ? 'active' : 'muted');
         });
-    }
 
-    // Handlers
-    radar.presence.subscribe(['enter', 'leave'], update);
-    client.connection.on('connected', startRadar);
+        // Toggle Autoplay
+        autoplayBtn.addEventListener('click', () => {
+            const isPaused = mapLayer.style.animationPlayState === 'paused';
+            mapLayer.style.animationPlayState = isPaused ? 'running' : 'paused';
+            autoplayBtn.innerText = isPaused ? '▶️' : '⏸️';
+            localStorage.setItem(STORAGE_KEYS.AUTOPLAY, isPaused ? 'on' : 'off');
+        });
 
-    const vBtn = document.getElementById('v-btn');
-    const aBtn = document.getElementById('a-btn');
-    const syncUI = () => {
-        vBtn.innerText = `Som: ${settings.vol ? 'ON' : 'OFF'}`;
-        vBtn.classList.toggle('active', settings.vol);
-        aBtn.innerText = `Giro: ${settings.auto ? 'ON' : 'OFF'}`;
-        aBtn.classList.toggle('active', settings.auto);
-        world.controls().autoRotate = settings.auto;
-    };
+        // Proteção contra inspeção simples e cópia
+        document.addEventListener('contextmenu', e => e.preventDefault());
+        
+        // Anti-theft: Impede que o player funcione fora do domínio pretendido (opcional)
+        /*
+        const authorizedDomain = "seusite.com";
+        if (!window.location.hostname.includes(authorizedDomain)) {
+            document.body.innerHTML = "Acesso não autorizado ao player.";
+        }
+        */
 
-    vBtn.onclick = () => { settings.vol = !settings.vol; localStorage.setItem('rau_v', settings.vol); syncUI(); };
-    aBtn.onclick = () => { settings.auto = !settings.auto; localStorage.setItem('rau_a', settings.auto); syncUI(); };
-
-    syncUI();
-    window.addEventListener('resize', () => { world.width(window.innerWidth); world.height(window.innerHeight); });
-})();
+        initSettings();
+    })();
 </script>
+
 </body>
 </html>
