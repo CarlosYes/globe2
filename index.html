@@ -3,63 +3,84 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RAU RADAR PRO - SPEED</title>
+    <title>RAU RADAR - PRO TOTAL</title>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/globe.gl@2.26.2/dist/globe.gl.min.js"></script>
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     <style>
-        :root { --neon: #39ff14; }
-        body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
-        #globeViz { width: 100vw; height: 100vh; position: fixed; }
+        :root { --neon: #39ff14; --bg: #000; }
+        body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Courier New', monospace; user-select: none; }
+        #globeViz { width: 100vw; height: 100vh; position: fixed; top: 0; left: 0; }
         
-        /* HUD simplificado e ultra-rápido */
+        /* HUD Interface */
         .hud {
-            position: absolute; top: 15px; left: 15px; z-index: 1000;
-            background: rgba(0,20,0,0.9); border: 1px solid var(--neon);
-            padding: 10px 20px; color: var(--neon); border-radius: 2px;
-            box-shadow: 0 0 15px rgba(57, 255, 20, 0.2);
+            position: absolute; top: 20px; left: 20px; z-index: 1000;
+            background: rgba(0,0,0,0.9); border: 2px solid var(--neon);
+            padding: 15px; color: var(--neon); border-radius: 4px;
+            box-shadow: 0 0 25px rgba(57, 255, 20, 0.3);
+            pointer-events: auto;
         }
-        .count { font-size: 42px; font-weight: bold; line-height: 1; display: block; }
+        .count { font-size: 55px; font-weight: bold; line-height: 1; display: block; text-shadow: 0 0 10px var(--neon); }
+        .status-text { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; display: block; }
         
-        /* Marcador Radar com Bandeira */
+        .controls { display: flex; gap: 8px; }
+        .btn { 
+            background: transparent; border: 1px solid var(--neon); color: var(--neon);
+            padding: 5px 10px; cursor: pointer; font-size: 10px; font-weight: bold;
+            text-transform: uppercase; transition: 0.2s;
+        }
+        .btn.active { background: var(--neon); color: #000; }
+
+        /* Marcadores do Globo */
         .m-rau { display: flex; flex-direction: column; align-items: center; pointer-events: none; }
-        .label { 
-            display: flex; align-items: center; gap: 5px;
-            background: #000; border: 1px solid var(--neon);
-            padding: 2px 8px; border-radius: 10px; color: #fff;
-            font-size: 10px; font-weight: bold;
+        .label-box { 
+            display: flex; align-items: center; gap: 6px;
+            background: rgba(0,0,0,0.85); border: 1px solid var(--neon);
+            padding: 4px 10px; border-radius: 20px; color: #fff;
+            font-size: 11px; font-weight: bold; white-space: nowrap;
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
         }
-        .flag { width: 16px; height: 10px; border-radius: 1px; }
-        .dot { 
-            width: 8px; height: 8px; background: var(--neon); 
-            border-radius: 50%; margin-top: 4px; position: relative;
-            box-shadow: 0 0 8px var(--neon);
+        .flag-img { width: 18px; height: 12px; border-radius: 2px; object-fit: cover; }
+        .radar-dot { 
+            width: 10px; height: 10px; background: var(--neon); 
+            border-radius: 50%; margin-top: 5px; position: relative;
+            box-shadow: 0 0 15px var(--neon);
         }
-        .pulse {
+        .radar-pulse {
             position: absolute; width: 100%; height: 100%;
             background: var(--neon); border-radius: 50%;
-            animation: r-pulse 2s infinite;
+            animation: pulse-animation 2s infinite;
         }
-        @keyframes r-pulse { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(4); opacity: 0; } }
+        @keyframes pulse-animation { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(4); opacity: 0; } }
     </style>
 </head>
 <body oncontextmenu="return false;">
 
 <div class="hud">
     <span id="count" class="count">0</span>
-    <small id="status">SISTEMA ATIVO</small>
+    <span id="status" class="status-text">Iniciando Radar...</span>
+    <div class="controls">
+        <button id="v-btn" class="btn">Som: ON</button>
+        <button id="a-btn" class="btn">Giro: ON</button>
+    </div>
 </div>
 
 <div id="globeViz"></div>
 
 <script>
 (function() {
-    // Ably Config
-    const A_KEY = '0XXKIg.kPL-iw:5hRGSGvPZCgUwMNts43-74X7nB9_25r3YlD0s-WE7vs';
-    const ably = new Ably.Realtime({ key: A_KEY });
-    const radar = ably.channels.get('radar-global');
+    // 1. MEMÓRIA E ESTADO
+    const state = {
+        vol: localStorage.getItem('rau_v') !== 'false',
+        auto: localStorage.getItem('rau_a') !== 'false'
+    };
 
-    // Inicialização do Globo - Configuração de Performance
+    // 2. CONFIGURAÇÃO ABLY
+    const A_KEY = '0XXKIg.kPL-iw:5hRGSGvPZCgUwMNts43-74X7nB9_25r3YlD0s-WE7vs';
+    const client = new Ably.Realtime({ key: A_KEY });
+    const radar = client.channels.get('radar-global');
+
+    // 3. INICIALIZAÇÃO DO GLOBO
     const world = Globe()(document.getElementById('globeViz'))
         .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-night.jpg')
         .backgroundColor('#000000')
@@ -69,59 +90,98 @@
         .htmlElement(d => {
             const el = document.createElement('div');
             el.className = 'm-rau';
-            const f = `https://flagcdn.com/w40/${d.cc.toLowerCase()}.png`;
+            const flagUrl = `https://flagcdn.com/w40/${d.cc.toLowerCase()}.png`;
             el.innerHTML = `
-                <div class="label">
-                    <img src="${f}" class="flag" onerror="this.style.display='none'">
+                <div class="label-box">
+                    <img src="${flagUrl}" class="flag-img" onerror="this.style.display='none'">
                     <span>${d.city}</span>
                 </div>
-                <div class="dot"><div class="pulse"></div></div>`;
+                <div class="radar-dot"><div class="radar-pulse"></div></div>
+            `;
             return el;
         });
 
-    world.controls().autoRotate = true;
+    world.controls().autoRotate = state.auto;
     world.controls().autoRotateSpeed = 0.5;
 
-    // Localização via Cloudflare (Serviço mais rápido que existe)
-    async function start() {
+    // 4. MOTOR DE LOCALIZAÇÃO COM REDUNDÂNCIA
+    async function getLocation() {
+        // Tentativa 1: IPAPI (Mais completo)
         try {
-            // Tentativa 1: API de alta velocidade
-            const res = await fetch('https://ipapi.co/json/');
-            const data = await res.json();
-            
-            const user = {
-                lat: data.latitude,
-                lng: data.longitude,
-                city: (data.city || "CONECTADO").toUpperCase(),
-                cc: data.country_code || "us"
-            };
+            const r = await fetch('https://ipapi.co/json/');
+            const d = await r.json();
+            if(d.latitude) return { lat: d.latitude, lng: d.longitude, city: d.city, cc: d.country_code };
+        } catch(e) {}
 
-            radar.presence.enter(user);
-            document.getElementById('status').innerText = `RADAR: ${user.city}`;
-            world.pointOfView({ lat: user.lat, lng: user.lng, altitude: 2.5 }, 1500);
-            
-            sync();
-        } catch (e) {
-            document.getElementById('status').innerText = "ERRO SINAL GPS";
-        }
+        // Tentativa 2: FREEIPAPI (Backup rápido)
+        try {
+            const r = await fetch('https://freeipapi.com/api/json');
+            const d = await r.json();
+            if(d.latitude) return { lat: d.latitude, lng: d.longitude, city: d.cityName, cc: d.countryCode };
+        } catch(e) {}
+
+        // Fallback final
+        return { lat: 0, lng: 0, city: "VISITANTE", cc: "un" };
     }
 
-    function sync() {
+    // 5. BOOTSTRAP DO SISTEMA
+    async function start() {
+        document.getElementById('status').innerText = "Sincronizando...";
+        const pos = await getLocation();
+        
+        const userData = {
+            lat: pos.lat,
+            lng: pos.lng,
+            city: pos.city.toUpperCase(),
+            cc: pos.cc.toLowerCase(),
+            id: client.connection.id
+        };
+
+        radar.presence.enter(userData);
+        document.getElementById('status').innerText = `Online: ${userData.city}`;
+        world.pointOfView({ lat: userData.lat, lng: userData.lng, altitude: 2.2 }, 2000);
+        
+        refresh();
+    }
+
+    function refresh() {
         radar.presence.get((err, members) => {
             if (err) return;
-            const pts = members.map(m => m.data).filter(p => p && p.lat);
-            document.getElementById('count').innerText = pts.length;
-            world.htmlElementsData(pts);
+            const points = members.map(m => m.data).filter(p => p && p.lat !== undefined);
+            document.getElementById('count').innerText = points.length;
+            world.htmlElementsData(points);
         });
     }
 
-    radar.presence.subscribe(['enter', 'leave'], sync);
-    ably.connection.on('connected', start);
+    // 6. EVENTOS E UI
+    radar.presence.subscribe(['enter', 'leave'], refresh);
 
+    const vBtn = document.getElementById('v-btn');
+    const aBtn = document.getElementById('a-btn');
+
+    const syncUI = () => {
+        vBtn.innerText = `Som: ${state.vol ? 'ON' : 'OFF'}`;
+        vBtn.classList.toggle('active', state.vol);
+        aBtn.innerText = `Giro: ${state.auto ? 'ON' : 'OFF'}`;
+        aBtn.classList.toggle('active', state.auto);
+        world.controls().autoRotate = state.auto;
+    };
+
+    vBtn.onclick = () => { state.vol = !state.vol; localStorage.setItem('rau_v', state.vol); syncUI(); };
+    aBtn.onclick = () => { state.auto = !state.auto; localStorage.setItem('rau_a', state.auto); syncUI(); };
+
+    syncUI();
+    client.connection.on('connected', start);
+
+    // 7. SEGURANÇA E RESIZE
     window.addEventListener('resize', () => {
         world.width(window.innerWidth);
         world.height(window.innerHeight);
     });
+
+    document.onkeydown = (e) => {
+        if (e.keyCode == 123 || (e.ctrlKey && e.shiftKey && (e.keyCode == 73 || e.keyCode == 74)) || (e.ctrlKey && e.keyCode == 85)) return false;
+    };
 })();
 </script>
 </body>
