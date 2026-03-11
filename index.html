@@ -4,58 +4,55 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RAU RADAR PRO</title>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/globe.gl@2.26.2/dist/globe.gl.min.js"></script>
+    <script src="https://unpkg.com/three"></script>
+    <script src="https://unpkg.com/globe.gl"></script>
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     <style>
         :root { --neon: #39ff14; }
-        body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; }
-        #globeViz { width: 100vw; height: 100vh; position: fixed; top: 0; left: 0; }
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: var(--neon); }
+        #globeViz { width: 100vw; height: 100vh; position: fixed; top: 0; left: 0; z-index: 1; }
         
         .hud {
-            position: absolute; top: 20px; left: 20px; z-index: 1000;
-            background: rgba(0,20,0,0.9); border: 2px solid var(--neon);
-            padding: 15px; color: var(--neon); border-radius: 4px;
-            box-shadow: 0 0 20px rgba(57, 255, 20, 0.4);
+            position: absolute; top: 20px; left: 20px; z-index: 100;
+            background: rgba(0,0,0,0.9); border: 2px solid var(--neon);
+            padding: 15px; border-radius: 4px; box-shadow: 0 0 20px rgba(57, 255, 20, 0.3);
+            pointer-events: auto;
         }
-        .count { font-size: 55px; font-weight: bold; line-height: 1; display: block; }
+        .count { font-size: 50px; font-weight: bold; line-height: 1; display: block; }
         .controls { display: flex; gap: 8px; margin-top: 10px; }
         .btn { 
             background: transparent; border: 1px solid var(--neon); color: var(--neon);
-            padding: 5px 10px; cursor: pointer; font-size: 10px; font-weight: bold;
+            padding: 5px 10px; cursor: pointer; font-size: 10px; font-weight: bold; text-transform: uppercase;
         }
         .btn.active { background: var(--neon); color: #000; }
 
-        /* Marcador de Visita */
+        /* Marcadores */
         .m-rau { display: flex; flex-direction: column; align-items: center; pointer-events: none; }
         .label { 
-            display: flex; align-items: center; gap: 6px;
-            background: #000; border: 1px solid var(--neon);
-            padding: 4px 10px; border-radius: 20px; color: #fff;
-            font-size: 11px; font-weight: bold; white-space: nowrap;
+            display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.85); 
+            border: 1px solid var(--neon); padding: 4px 10px; border-radius: 20px; 
+            color: #fff; font-size: 11px; font-weight: bold; white-space: nowrap;
         }
         .flag { width: 18px; height: 12px; border-radius: 2px; }
         .dot { 
-            width: 10px; height: 10px; background: var(--neon); 
-            border-radius: 50%; margin-top: 5px; position: relative;
-            box-shadow: 0 0 10px var(--neon);
+            width: 10px; height: 10px; background: var(--neon); border-radius: 50%; 
+            margin-top: 5px; position: relative; box-shadow: 0 0 10px var(--neon);
         }
         .pulse {
-            position: absolute; width: 100%; height: 100%;
-            background: var(--neon); border-radius: 50%;
-            animation: radar-pulse 2s infinite;
+            position: absolute; width: 100%; height: 100%; background: var(--neon); 
+            border-radius: 50%; animation: pulse-ring 2s infinite;
         }
-        @keyframes radar-pulse { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(4); opacity: 0; } }
+        @keyframes pulse-ring { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(4); opacity: 0; } }
     </style>
 </head>
 <body oncontextmenu="return false;">
 
 <div class="hud">
     <span id="count" class="count">0</span>
-    <small id="status">INICIALIZANDO RADAR...</small>
+    <small id="status">INICIALIZANDO...</small>
     <div class="controls">
-        <button id="v-btn" class="btn">SOM: ON</button>
-        <button id="a-btn" class="btn">AUTO: ON</button>
+        <button id="v-btn" class="btn">Som: ON</button>
+        <button id="a-btn" class="btn">Giro: ON</button>
     </div>
 </div>
 
@@ -63,49 +60,50 @@
 
 <script>
 (function() {
-    const config = {
+    // 1. Persistência de Som e Giro
+    const settings = {
         vol: localStorage.getItem('rau_v') !== 'false',
         auto: localStorage.getItem('rau_a') !== 'false'
     };
 
-    const client = new Ably.Realtime({ key: '0XXKIg.kPL-iw:5hRGSGvPZCgUwMNts43-74X7nB9_25r3YlD0s-WE7vs' });
-    const radar = client.channels.get('radar-global');
-
-    // Inicialização do Globo - Estilo Radar (Sem texturas pesadas para não falhar)
+    // 2. Configuração do Globo (Uso de link alternativo para evitar tela preta)
     const world = Globe()(document.getElementById('globeViz'))
+        .globeImageUrl('//unpkg.com/three-globe/example/img/earth-night.jpg')
         .backgroundColor('#000000')
         .showAtmosphere(true)
         .atmosphereColor('#39ff14')
-        .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-night.jpg') // Fallback se carregar
         .htmlElement(d => {
             const el = document.createElement('div');
             el.className = 'm-rau';
-            const flag = `https://flagcdn.com/w40/${d.cc.toLowerCase()}.png`;
-            el.innerHTML = `<div class="label"><img src="${flag}" class="flag"><span>${d.city}</span></div><div class="dot"><div class="pulse"></div></div>`;
+            const fUrl = `https://flagcdn.com/w40/${d.cc.toLowerCase()}.png`;
+            el.innerHTML = `<div class="label"><img src="${fUrl}" class="flag"><span>${d.city}</span></div><div class="dot"><div class="pulse"></div></div>`;
             return el;
         });
 
-    world.controls().autoRotate = config.auto;
+    world.controls().autoRotate = settings.auto;
     world.controls().autoRotateSpeed = 0.5;
 
+    // 3. Conexão Ably
+    const client = new Ably.Realtime({ key: '0XXKIg.kPL-iw:5hRGSGvPZCgUwMNts43-74X7nB9_25r3YlD0s-WE7vs' });
+    const radar = client.channels.get('radar-global');
+
+    // 4. Localização com Backup
     async function start() {
         try {
             const res = await fetch('https://ipapi.co/json/');
             const data = await res.json();
-            
             const user = {
                 lat: data.latitude || 0,
                 lng: data.longitude || 0,
-                city: (data.city || "SISTEMA").toUpperCase(),
+                city: (data.city || "VISITANTE").toUpperCase(),
                 cc: data.country_code || "un"
             };
-
             radar.presence.enter(user);
-            document.getElementById('status').innerText = "ONLINE: " + user.city;
+            document.getElementById('status').innerText = "SISTEMA ATIVO: " + user.city;
             world.pointOfView({ lat: user.lat, lng: user.lng, altitude: 2.2 }, 2000);
             update();
         } catch (e) {
-            document.getElementById('status').innerText = "ERRO GPS - RECARREGUE";
+            document.getElementById('status').innerText = "SINAL GPS FRACO";
         }
     }
 
@@ -118,21 +116,23 @@
         });
     }
 
+    // 5. Interface e Eventos
     radar.presence.subscribe(['enter', 'leave'], update);
     client.connection.on('connected', start);
 
-    // Controles e Persistência
     const vBtn = document.getElementById('v-btn');
     const aBtn = document.getElementById('a-btn');
+
     const syncUI = () => {
-        vBtn.innerText = `SOM: ${config.vol ? 'ON' : 'OFF'}`;
-        vBtn.classList.toggle('active', config.vol);
-        aBtn.innerText = `AUTO: ${config.auto ? 'ON' : 'OFF'}`;
-        aBtn.classList.toggle('active', config.auto);
-        world.controls().autoRotate = config.auto;
+        vBtn.innerText = `Som: ${settings.vol ? 'ON' : 'OFF'}`;
+        vBtn.classList.toggle('active', settings.vol);
+        aBtn.innerText = `Giro: ${settings.auto ? 'ON' : 'OFF'}`;
+        aBtn.classList.toggle('active', settings.auto);
+        world.controls().autoRotate = settings.auto;
     };
-    vBtn.onclick = () => { config.vol = !config.vol; localStorage.setItem('rau_v', config.vol); syncUI(); };
-    aBtn.onclick = () => { config.auto = !config.auto; localStorage.setItem('rau_a', config.auto); syncUI(); };
+
+    vBtn.onclick = () => { settings.vol = !settings.vol; localStorage.setItem('rau_v', settings.vol); syncUI(); };
+    aBtn.onclick = () => { settings.auto = !settings.auto; localStorage.setItem('rau_a', settings.auto); syncUI(); };
 
     syncUI();
     window.addEventListener('resize', () => { world.width(window.innerWidth); world.height(window.innerHeight); });
