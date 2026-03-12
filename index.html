@@ -1,58 +1,119 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt">
 <head>
     <meta charset="UTF-8">
-    <title>Globo de Visitantes Real-Time</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAU RADAR v60 - FINAL BORDER</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/globe.gl"></script>
+    <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     <style>
-        /* Fundo da página */
-        body {
-            margin: 0;
-            background-color: #f4f4f4;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Arial Black', sans-serif; }
+        #globeViz { width: 100vw; height: 100vh; position: absolute; }
+        .hud {
+            position: absolute; top: 25px; left: 25px; z-index: 1000;
+            background: rgba(0, 0, 0, 0.95); border: 2px solid #39ff14;
+            padding: 20px; color: #39ff14; pointer-events: none;
+            box-shadow: 0 0 35px #39ff1466; border-radius: 4px;
         }
-
-        /* Container do Globo - Estilo exato da sua imagem */
-        .globe-box {
-            position: relative;
-            padding: 15px;
-            background: #ffffff;
-            border: 1px solid #ddd;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        .count { font-size: 80px; font-weight: 900; color: #fff; line-height: 0.8; letter-spacing: -5px; }
+        .m-rau { display: flex; flex-direction: column; align-items: center; }
+        .l-rau {
+            background: #39ff14; color: #000; padding: 4px 10px; border-radius: 2px;
+            font-size: 11px; font-weight: 900; display: flex; align-items: center; gap: 6px;
+            white-space: nowrap; border: 1px solid #fff;
         }
-
-        /* Camada de Segurança (Anti-Theft) */
-        /* Bloqueia cliques diretos para proteger sua Key e o widget */
-        .shield {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 999;
-            background: transparent;
-        }
+        .l-rau img { width: 20px; height: 13px; object-fit: cover; }
+        .d-rau { width: 12px; height: 12px; background: #fff; border-radius: 50%; margin-top: 5px; border: 2px solid #39ff14; animation: p 0.6s infinite alternate; }
+        @keyframes p { from { transform: scale(1); opacity: 1; } to { transform: scale(3.5); opacity: 0; } }
     </style>
 </head>
-<body oncontextmenu="return false;">
+<body>
 
-    <div class="globe-box">
-        <div class="shield"></div>
+<div class="hud">
+    <div style="font-size: 10px; letter-spacing: 5px;">RAU SYSTEM v60</div>
+    <div id="count" class="count">0</div>
+    <div id="status" style="font-size: 11px; color: #fff; margin-top: 10px; font-family: monospace;">A RASTREAR POSIÇÃO REAL...</div>
+</div>
 
-        <script type="text/javascript" src="//rf.revolvermaps.com/0/0/8.js?i=0XXKIg.kPL-iw:5hRGSGvPZCgUwMNts43-74X7nB9_25r3YlD0s-WE7vs&amp;m=0&amp;c=ff0000&amp;cr1=ffffff&amp;f=arial&amp;l=33&amp;bv=90&amp;lx=-420&amp;ly=420&amp;hi=20&amp;he=7&amp;hc=a8ddff&amp;rs=80" async="async"></script>
-    </div>
+<div id="globeViz"></div>
 
-    <script>
-        /* Proteção de Código */
-        document.onkeydown = function(e) {
-            // Bloqueia F12, Ctrl+U e Inspeção
-            if (e.keyCode == 123 || (e.ctrlKey && (e.keyCode == 85 || e.shiftKey && e.keyCode == 73))) {
-                return false;
+<script>
+    const ABLY_KEY = '0XXKIg.kPL-iw:5hRGSGvPZCgUwMNts43-74X7nB9_25r3YlD0s-WE7vs';
+    const SESSION_ID = 'RAU-' + Math.random().toString(36).substr(2, 7);
+
+    const world = Globe()(document.getElementById('globeViz'))
+        .globeImageUrl('//unpkg.com/three-globe/example/img/earth-night.jpg')
+        .backgroundColor('#000000')
+        .showAtmosphere(true)
+        .atmosphereColor('#39ff14')
+        .htmlElement(d => {
+            const el = document.createElement('div');
+            el.className = 'm-rau';
+            const flag = d.country ? `<img src="https://flagcdn.com/w40/${d.country.toLowerCase()}.png">` : '';
+            el.innerHTML = `<div class="l-rau">${flag}<span>${d.city}</span></div><div class="d-rau"></div>`;
+            return el;
+        });
+
+    async function getPreciseLoc() {
+        try {
+            // Usando Fetch direto (mais limpo e difícil de bloquear)
+            const response = await fetch('https://ipapi.co/json/');
+            const d = await response.json();
+            
+            if (d && d.latitude) {
+                return {
+                    lat: d.latitude,
+                    lng: d.longitude,
+                    city: d.city.toUpperCase(),
+                    country: d.country_code.toLowerCase()
+                };
             }
-        };
-    </script>
+        } catch (e) {
+            // Backup via Cloudflare trace se o primeiro falhar
+            const cf = await fetch('https://1.1.1.1/cdn-cgi/trace').then(r => r.text());
+            const ip = cf.split('\n').find(l => l.startsWith('ip=')).split('=')[1];
+            const locRes = await fetch(`https://ipapi.co/${ip}/json/`);
+            const d2 = await locRes.json();
+            return { lat: d2.latitude, lng: d2.longitude, city: d2.city.toUpperCase(), country: d2.country_code.toLowerCase() };
+        }
+        return null;
+    }
 
+    async function init() {
+        const geo = await getPreciseLoc();
+        if (!geo) {
+            document.getElementById('status').innerText = "ERRO DE SINCRONIZAÇÃO";
+            return;
+        }
+
+        const ably = new Ably.Realtime({ key: ABLY_KEY, clientId: SESSION_ID });
+        const channel = ably.channels.get('rau-live-radar');
+
+        ably.connection.on('connected', () => {
+            document.getElementById('status').innerText = `FIXADO: ${geo.city}`;
+            channel.presence.enter(geo);
+
+            const update = () => {
+                channel.presence.get((err, members) => {
+                    if (!err) {
+                        const nodes = members.map(m => m.data).filter(x => x && x.lat);
+                        document.getElementById('count').innerText = nodes.length;
+                        world.htmlElementsData(nodes);
+                    }
+                });
+            };
+            channel.presence.subscribe(['enter', 'leave', 'present', 'update'], update);
+            update();
+        });
+
+        world.pointOfView({ lat: geo.lat, lng: geo.lng, altitude: 1.8 }, 2000);
+    }
+
+    world.controls().autoRotate = true;
+    world.controls().autoRotateSpeed = 0.5;
+    window.onload = init;
+</script>
 </body>
 </html>
+
